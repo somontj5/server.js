@@ -1,0 +1,40 @@
+# СтеклоМаркет — тестовый сервер
+
+Node.js 20, без зависимостей. Вход через Telegram-бота с подтверждением номера телефона. Уведомления о сообщениях, отзывах и новых объявлениях по сохранённым поискам приходят в Telegram.
+
+## Запуск на GitHub (6 часов)
+1. Создайте бота у @BotFather (`/newbot`) и скопируйте токен.
+2. В репозитории откройте **Settings → Secrets and variables → Actions → New repository secret**: имя `BOT_TOKEN`, значение — токен бота.
+3. Откройте **Actions → «GlassMarket test server (6h)» → Run workflow**.
+4. Адрес сервера (`https://….trycloudflare.com`) появится в Summary запуска. Ещё его можно получить командой `/url` у бота.
+
+Адрес меняется при каждом запуске. База данных сохраняется между запусками через кэш Actions.
+
+Запуск локально: `BOT_TOKEN=... node server.js` (порт 8080).
+
+## Вход (из приложения)
+1. `POST /auth/start` → `{code, link}`. Откройте `link`: бот попросит подтвердить номер.
+2. Раз в 2 секунды вызывайте `GET /auth/check?code=…`. После подтверждения придёт `{status:"ok", token, user}`.
+3. Дальше передавайте заголовок `Authorization: Bearer <token>`.
+
+## API (JSON, 🔒 = нужен токен)
+| Метод | Путь | Описание |
+|---|---|---|
+| GET | /listings?q=&cat=&min=&max=&sort=rec\|new\|cheap\|exp&offset=&limit= | поиск |
+| GET | /listings?seller=me&archived=0\|1 🔒 | мои активные / архив |
+| GET | /listings/:id | объявление целиком |
+| POST/PUT | /listings, /listings/:id 🔒 | создать / изменить `{cat,name,photos[],price,desc,row,shopNum,shopName,contact,phone}` |
+| POST | /listings/:id/archive \| restore \| rise 🔒 | в архив / вернуть / ТОП на 7 дней |
+| DELETE | /listings/:id 🔒 | удалить |
+| GET/POST/DELETE | /favorites, /favorites/:id 🔒 | избранное |
+| POST | /listings/:id/thread 🔒 | открыть диалог с продавцом |
+| GET | /threads 🔒 | список диалогов + `unread` |
+| GET | /threads/:id?since=ts 🔒 | сообщения (отмечает прочитанными) |
+| POST | /threads/:id/messages 🔒 | `{text}` |
+| GET | /users/:id/reviews | рейтинг и отзывы |
+| POST | /users/:id/reviews 🔒 | `{stars,text}`, только после переписки |
+| GET/POST/DELETE | /searches, /searches/:id 🔒 | сохранённые поиски (`fresh` — новые) |
+| POST | /searches/:id/seen 🔒 | отметить новые просмотренными |
+| GET/PUT | /me 🔒 | профиль `{name,shopName,row,shopNum}` |
+
+Команды бота: `/url` — адрес сервера, `/stop` — выключить уведомления, `/notify` — включить.
