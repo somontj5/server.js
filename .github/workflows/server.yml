@@ -1,32 +1,59 @@
 name: GlassMarket test server (6h)
 on:
   workflow_dispatch:
-concurrency: { group: gm-server, cancel-in-progress: true }
+concurrency:
+  group: gm-server
+  cancel-in-progress: true
 jobs:
   run:
     runs-on: ubuntu-latest
     timeout-minutes: 360
     steps:
       - uses: actions/checkout@v4
+
       - uses: actions/setup-node@v4
-        with: { node-version: 20 }
+        with:
+          node-version: 20
+
+      - name: Install dependencies
+        run: |
+          if [ -f package.json ]; then npm install; fi
+
       - name: Restore DB from previous run
         uses: actions/cache/restore@v4
-        with: { path: data, key: gm-db-${{ github.run_id }}, restore-keys: gm-db- }
+        with:
+          path: data
+          key: gm-db-${{ github.run_id }}
+          restore-keys: gm-db-
+
       - name: Start Cloudflare tunnel
         run: |
           curl -sL -o cf.deb https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64.deb
           sudo dpkg -i cf.deb >/dev/null
           nohup cloudflared tunnel --no-autoupdate --url http://localhost:8080 > cf.log 2>&1 &
-          for i in $(seq 1 60); do URL=$(grep -o 'https://[a-z0-9-]*\.trycloudflare\.com' cf.log | head -1); [ -n "$URL" ] && break; sleep 2; done
+          URL=""
+          for i in $(seq 1 60); do
+            URL=$(grep -o 'https://[a-z0-9-]*\.trycloudflare\.com' cf.log | grep -v '^https://api\.' | head -1)
+            [ -n "$URL" ] && break
+            sleep 2
+          done
+          if [ -z "$URL" ]; then
+            echo "Tunnel URL not found"
+            cat cf.log
+            exit 1
+          fi
           echo "PUBLIC_URL=$URL" >> $GITHUB_ENV
           echo "## 🌐 Адрес сервера: $URL" >> $GITHUB_STEP_SUMMARY
           echo "Server URL: $URL"
+
       - name: Run server (~5h50m)
         env:
           BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
         run: timeout -s TERM 350m node server.js || true
+
       - name: Save DB for next run
         if: always()
         uses: actions/cache/save@v4
-        with: { path: data, key: gm-db-${{ github.run_id }} }
+        with:
+          path: data
+          key: gm-db-${{ github.run_id }}
