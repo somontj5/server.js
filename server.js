@@ -50,21 +50,24 @@ async function onMessage(m) {
   const chat = m.chat.id, text = m.text || '';
   if (m.contact) {
     if (m.contact.user_id !== m.from.id) return say(chat, '❌ Отправьте свой номер, а не чужой контакт.');
-    const code = Object.keys(db.codes).find(c => db.codes[c].chat === chat && db.codes[c].status === 'wait');
-    if (!code) return say(chat, 'Код входа не найден или устарел. Нажмите «Войти» в приложении ещё раз.', { reply_markup:{ remove_keyboard:true } });
-    let user = Object.values(db.users).find(x => x.tgId === m.from.id);
-    if (!user) { user = { id: rid(5), tgId: m.from.id, createdAt: now(), shopName:'', row:'', shopNum:'' }; db.users[user.id] = user; }
-    user.chatId = chat; user.phone = '+' + String(m.contact.phone_number).replace(/\D/g,'');
-    user.name = [m.from.first_name, m.from.last_name].filter(Boolean).join(' ');
-    db.codes[code].status = 'ok'; db.codes[code].userId = user.id; touch();
-    return say(chat, '✅ Номер ' + user.phone + ' подтверждён. Вернитесь в приложение — вход выполнится сам.\n\nСюда будут приходить уведомления о сообщениях и новых объявлениях по вашим поискам.', { reply_markup:{ remove_keyboard:true } });
+    const user = Object.values(db.users).find(x => x.tgId === m.from.id);
+    if (!user) return say(chat, 'Сначала нажмите «Войти через Telegram» в приложении.', { reply_markup:{ remove_keyboard:true } });
+    user.chatId = chat; user.phone = '+' + String(m.contact.phone_number).replace(/\D/g,''); touch();
+    return say(chat, '✅ Номер ' + user.phone + ' сохранён в профиле.', { reply_markup:{ remove_keyboard:true } });
   }
   if (text.startsWith('/start')) {
     const code = text.split(' ')[1];
     if (code && db.codes[code] && db.codes[code].status === 'wait') {
-      db.codes[code].chat = chat; touch();
-      return say(chat, 'Чтобы войти в СтеклоМаркет, подтвердите номер телефона кнопкой ниже 👇', {
-        reply_markup:{ keyboard:[[{ text:'📱 Подтвердить номер', request_contact:true }]], resize_keyboard:true, one_time_keyboard:true } });
+      // Вход в одно касание: нажал «Старт» — и уже вошёл (номер не обязателен)
+      let user = Object.values(db.users).find(x => x.tgId === m.from.id);
+      if (!user) { user = { id: rid(5), tgId: m.from.id, createdAt: now(), shopName:'', row:'', shopNum:'', phone:'' }; db.users[user.id] = user; }
+      user.chatId = chat; user.username = m.from.username || '';
+      user.name = user.name || [m.from.first_name, m.from.last_name].filter(Boolean).join(' ');
+      Object.assign(db.codes[code], { chat, status:'ok', userId:user.id }); touch();
+      await say(chat, '✅ Вы вошли в СтеклоМаркет как ' + (user.name || 'пользователь') + '.\nВернитесь в приложение — вход уже выполнен.');
+      if (!user.phone) return say(chat, 'Хотите, чтобы покупатели могли позвонить? Поделитесь номером (необязательно) 👇', {
+        reply_markup:{ keyboard:[[{ text:'📱 Поделиться номером', request_contact:true }]], resize_keyboard:true, one_time_keyboard:true } });
+      return;
     }
     return say(chat, 'Это бот входа в СтеклоМаркет.\nНажмите «Войти через Telegram» в приложении.' + (PUB ? '\n\nАдрес сервера: ' + PUB : ''));
   }
