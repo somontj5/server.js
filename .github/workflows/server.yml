@@ -1,6 +1,10 @@
 name: GlassMarket test server (6h)
 on:
   workflow_dispatch:
+  schedule:
+    - cron: '0 */6 * * *'   # автоперезапуск каждые 6 часов
+permissions:
+  contents: write            # нужно, чтобы записать server-url.txt в репозиторий
 concurrency:
   group: gm-server
   cancel-in-progress: true
@@ -37,18 +41,24 @@ jobs:
             [ -n "$URL" ] && break
             sleep 2
           done
-          if [ -z "$URL" ]; then
-            echo "Tunnel URL not found"
-            cat cf.log
-            exit 1
-          fi
+          if [ -z "$URL" ]; then echo "Tunnel URL not found"; cat cf.log; exit 1; fi
           echo "PUBLIC_URL=$URL" >> $GITHUB_ENV
-          echo "## 🌐 Адрес сервера: $URL" >> $GITHUB_STEP_SUMMARY
+          echo "## Адрес сервера: $URL" >> $GITHUB_STEP_SUMMARY
           echo "Server URL: $URL"
+
+      - name: Publish server URL for the app
+        run: |
+          echo "$PUBLIC_URL" > server-url.txt
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898333+github-actions[bot]@users.noreply.github.com"
+          git add server-url.txt
+          git commit -m "server-url: $PUBLIC_URL [skip ci]" || echo "no changes"
+          for i in 1 2 3; do git pull --rebase -q && git push -q && break; sleep 3; done
 
       - name: Run server (~5h50m)
         env:
           BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
+          PUBLIC_URL: ${{ env.PUBLIC_URL }}
         run: timeout -s TERM 350m node server.js || true
 
       - name: Save DB for next run
