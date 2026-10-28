@@ -148,7 +148,7 @@ function recommend(arr, u) {
 for (const l of Object.values(db.listings)) if (!l.tags) { l.tags = makeTags(l); touch(); }
 
 /* ================= Представления ================= */
-const pubUser = u => u && ({ id:u.id, name:u.name, shopName:u.shopName, row:u.row, shopNum:u.shopNum, rating: rating(u.id) });
+const pubUser = u => u && ({ id:u.id, name:u.name, shopName:u.shopName, row:u.row, shopNum:u.shopNum, about:u.about||'', rating: rating(u.id) });
 const meUser = u => Object.assign(pubUser(u), { phone:u.phone });
 function rating(uid) { const a = db.reviews.filter(r => r.sellerId === uid); return { n:a.length, avg: a.length ? +(a.reduce((s,r)=>s+r.stars,0)/a.length).toFixed(2) : 0 }; }
 function listingOut(l, full) {
@@ -210,7 +210,7 @@ route('POST', '/auth/logout', 1, (q, b, u, req) => { delete db.sessions[req.toke
 
 // --- Профиль ---
 route('GET', '/me', 1, (q, b, u) => meUser(u));
-route('PUT', '/me', 1, (q, b, u) => { ['name','shopName','row','shopNum'].forEach(k => { if (b[k] !== undefined) u[k] = str(b[k], 60); }); touch(); return meUser(u); });
+route('PUT', '/me', 1, (q, b, u) => { ['name','shopName','row','shopNum','phone'].forEach(k => { if (b[k] !== undefined) u[k] = str(b[k], 60); }); if (b.about !== undefined) u.about = str(b.about, 200); touch(); return meUser(u); });
 route('GET', '/users/:id', 0, (q, b, u, r, p) => pubUser(db.users[p.id]) || need(404, 'Нет пользователя'));
 
 // --- Объявления ---
@@ -285,14 +285,14 @@ route('POST', '/threads/:id/messages', 1, (q, b, u, r, p) => {
 route('GET', '/users/:id/reviews', 0, (q, b, u, r, p) => {
   const a = db.reviews.filter(x => x.sellerId === p.id).sort((x,y) => y.t - x.t);
   return Object.assign(rating(p.id), { dist: [5,4,3,2,1].map(s => a.filter(x => x.stars === s).length),
-    items: a.map(x => ({ id:x.id, stars:x.stars, text:x.text, t:x.t, author: (db.users[x.authorId]||{}).name || 'Покупатель', listingName: x.listingName })) });
+    items: a.map(x => ({ id:x.id, stars:x.stars, text:x.text, t:x.t, author: (db.users[x.authorId]||{}).name || (db.users[x.authorId]||{}).shopName || 'Покупатель', listingName: x.listingName })) });
 });
 route('POST', '/users/:id/reviews', 1, (q, b, u, r, p) => {
   if (p.id === u.id) need(400, 'Нельзя оценить себя');
-  const t = Object.values(db.threads).find(t => t.sellerId === p.id && t.buyerId === u.id && t.messages.some(m => m.from === u.id));
-  if (!t) need(403, 'Отзыв можно оставить после переписки с продавцом');
+  if (!db.users[p.id]) need(404, 'Нет продавца');
+  const t = Object.values(db.threads).find(t => t.sellerId === p.id && t.buyerId === u.id) || { listingId: b.listingId };
   const stars = Math.max(1, Math.min(5, Math.round(+b.stars || 0))), text = str(b.text, 500);
-  if (!stars || text.length < 5) need(400, 'Оценка 1–5 и текст от 5 символов');
+  if (!stars) need(400, 'Поставьте оценку 1–5');
   db.reviews = db.reviews.filter(x => !(x.sellerId === p.id && x.authorId === u.id));
   db.reviews.push({ id: rid(4), sellerId: p.id, authorId: u.id, stars, text, t: now(), listingName: (db.listings[t.listingId]||{}).name || '' }); touch();
   notify(p.id, `⭐ Новый отзыв (${stars}/5): ${text}`);
