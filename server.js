@@ -69,12 +69,31 @@ async function onMessage(m) {
         reply_markup:{ keyboard:[[{ text:'📱 Поделиться номером', request_contact:true }]], resize_keyboard:true, one_time_keyboard:true } });
       return;
     }
+    if (code && code.startsWith('l_')) return sendCard(chat, code.slice(2));
     return say(chat, 'Это бот входа в СтеклоМаркет.\nНажмите «Войти через Telegram» в приложении.' + (PUB ? '\n\nАдрес сервера: ' + PUB : ''));
   }
   if (text === '/url') return say(chat, PUB || 'Адрес сервера не задан');
   if (text === '/stop') { const u = Object.values(db.users).find(x => x.tgId === m.from.id); if (u) { u.mute = true; touch(); } return say(chat, '🔕 Уведомления выключены. /notify — включить.'); }
   if (text === '/notify') { const u = Object.values(db.users).find(x => x.tgId === m.from.id); if (u) { u.mute = false; touch(); } return say(chat, '🔔 Уведомления включены.'); }
 }
+// Карточка объявления в Telegram (ссылка «поделиться» ведёт сюда — она постоянная, в отличие от адреса туннеля)
+async function sendCard(chat, id) {
+  const l = db.listings[id];
+  if (!l || l.archived) return say(chat, '😔 Объявление снято с публикации или удалено.');
+  const s = db.users[l.sellerId] || {}, ph = l.contact && l.contact !== 'chat' ? (l.phone || s.phone || '') : '';
+  const cap = `${l.name}\n💰 ${l.price || 'цена не указана'}\n📍 Ряд ${l.row}, магазин №${l.shopNum} (${l.shopName})` + (ph ? `\n📞 ${ph}` : '') + (l.desc ? `\n\n${l.desc.slice(0, 600)}` : '') + '\n\nНаписать продавцу можно в приложении СтеклоМаркет.';
+  const p = l.photos[0];
+  try {
+    if (p && p.startsWith('http')) { const r = await tg('sendPhoto', { chat_id: chat, photo: p, caption: cap.slice(0, 1024) }); if (r.ok) return; }
+    else if (p && TOKEN) {
+      const m = p.match(/^data:(image\/\w+);base64,(.+)$/);
+      if (m) { const f = new FormData(); f.append('chat_id', String(chat)); f.append('caption', cap.slice(0, 1024)); f.append('photo', new Blob([Buffer.from(m[2], 'base64')], { type: m[1] }), 'photo.jpg');
+        const r = await (await fetch(`https://api.telegram.org/bot${TOKEN}/sendPhoto`, { method: 'POST', body: f })).json(); if (r.ok) return; }
+    }
+  } catch (e) { console.error(e); }
+  return say(chat, cap);
+}
+const shareUrl = id => BOT ? `https://t.me/${BOT}?start=l_${id}` : (PUB ? `${PUB}/l/${id}` : '');
 function notify(userId, text) { const u = db.users[userId]; if (u && !u.mute) say(u.chatId, text); }
 
 /* ================= Скрытые теги и рекомендации ================= */
@@ -153,7 +172,7 @@ const meUser = u => Object.assign(pubUser(u), { phone:u.phone });
 function rating(uid) { const a = db.reviews.filter(r => r.sellerId === uid); return { n:a.length, avg: a.length ? +(a.reduce((s,r)=>s+r.stars,0)/a.length).toFixed(2) : 0 }; }
 function listingOut(l, full) {
   const s = db.users[l.sellerId] || {};
-  const o = Object.assign({}, l, { top: isTop(l), seller: pubUser(s) }); delete o.tags;
+  const o = Object.assign({}, l, { top: isTop(l), seller: pubUser(s), shareUrl: shareUrl(l.id) }); delete o.tags;
   if (!full) { o.photo = l.photos[0] || null; o.photoCount = l.photos.length; delete o.photos; delete o.desc; }
   if (!(l.contact === 'both' || l.contact === 'phone' || l.contact === 'wa' || l.contact === 'tg')) o.phone = '';
   else o.phone = l.phone || s.phone || '';
@@ -333,6 +352,13 @@ route('POST', '/searches', 1, (q, b, u) => {
 route('POST', '/searches/:id/seen', 1, (q, b, u, r, p) => { const s = db.searches[p.id]; if (!s || s.userId !== u.id) need(404, 'Нет поиска'); s.seen = now(); touch(); return { ok:true }; });
 route('DELETE', '/searches/:id', 1, (q, b, u, r, p) => { const s = db.searches[p.id]; if (s && s.userId === u.id) { delete db.searches[p.id]; touch(); } return { ok:true }; });
 
+// --- Поделиться ---
+route('GET', '/listings/:id/share', 0, (q, b, u, r, p) => {
+  const l = db.listings[p.id] || need(404, 'Объявление не найдено');
+  const url = shareUrl(l.id);
+  return { url, text: `${l.name} — ${l.price || 'цена не указана'}\nРяд ${l.row}, магазин №${l.shopNum} (${l.shopName})` + (url ? `\n${url}` : '') };
+});
+
 // --- Рекомендации ---
 // Явные сигналы из приложения (необязательно): {type:'hide'|'view'|'fav', listingId}
 route('POST', '/events', 1, (q, b, u) => {
@@ -359,6 +385,19 @@ function send(res, code, obj) {
 http.createServer((req, res) => {
   if (req.method === 'OPTIONS') return send(res, 204, {});
   const url = new URL(req.url, 'http://x'), q = Object.fromEntries(url.searchParams);
+  const lm = req.method === 'GET' && url.pathname.match(/^\/l\/([\w-]+)$/);
+  if (lm) {
+    const l = db.listings[lm[1]], esc = v => String(v || '').replace(/[&<>"]/g, c => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;' })[c]);
+    const tgl = l && BOT ? `https://t.me/${BOT}?start=l_${l.id}` : '';
+    const html = l && !l.archived ? `<!doctype html><meta charset=utf-8><meta name=viewport content="width=device-width,initial-scale=1"><title>${esc(l.name)}</title><meta property="og:title" content="${esc(l.name + ' — ' + (l.price||''))}"><meta property="og:description" content="${esc('Ряд ' + l.row + ', магазин №' + l.shopNum)}">
+<body style="font-family:sans-serif;max-width:520px;margin:auto;padding:12px">${l.photos[0] ? `<img src="/l/${esc(l.id)}/photo" style="width:100%;border-radius:12px">` : ''}<h2>${esc(l.name)}</h2><h3>${esc(l.price || 'цена не указана')}</h3><p>📍 Ряд ${esc(l.row)}, магазин №${esc(l.shopNum)} (${esc(l.shopName)})</p><p style="white-space:pre-wrap">${esc(l.desc)}</p>${tgl ? `<a href="${tgl}" style="display:block;text-align:center;background:#2aabee;color:#fff;padding:14px;border-radius:12px;text-decoration:none">Открыть в Telegram</a>` : ''}</body>`
+      : '<!doctype html><meta charset=utf-8><h3 style="font-family:sans-serif">Объявление снято с публикации</h3>';
+    res.writeHead(l ? 200 : 404, { 'content-type': 'text/html; charset=utf-8' }); return res.end(html);
+  }
+  const pm = req.method === 'GET' && url.pathname.match(/^\/l\/([\w-]+)\/photo$/);
+  if (pm) { const l = db.listings[pm[1]], ph = l && l.photos[0], m = ph && ph.match(/^data:(image\/\w+);base64,(.+)$/);
+    if (m) { res.writeHead(200, { 'content-type': m[1], 'cache-control': 'max-age=86400' }); return res.end(Buffer.from(m[2], 'base64')); }
+    if (ph) { res.writeHead(302, { location: ph }); return res.end(); } res.writeHead(404); return res.end(); }
   const rt = routes.find(r => r.m === req.method && r.re.test(url.pathname));
   if (!rt) return send(res, 404, { error:'Не найдено' });
   let size = 0, chunks = [];
