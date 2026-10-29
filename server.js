@@ -108,6 +108,7 @@ function makeTags(l) {
   const t = new Set(['c:' + l.cat]);
   words(l.name).forEach(w => t.add('w:' + w));
   words(l.desc).slice(0, 30).forEach(w => t.add('w:' + w));
+  words(l.material).forEach(w => t.add('w:' + w));
   const pt = priceTag(l.price); if (pt) t.add(pt);
   if (l.sellerId) t.add('s:' + l.sellerId);
   if (l.row) t.add('r:' + String(l.row).toLowerCase());
@@ -181,7 +182,7 @@ function listingOut(l, full) {
 function matches(l, s) {
   if (l.archived) return false;
   if (s.cat && s.cat !== 'all' && l.cat !== s.cat) return false;
-  if (s.q && (l.name + ' ' + l.shopName + ' ' + l.desc).toLowerCase().indexOf(String(s.q).toLowerCase()) < 0) return false;
+  if (s.q && (l.name + ' ' + l.shopName + ' ' + l.desc + ' ' + (l.material||'')).toLowerCase().indexOf(String(s.q).toLowerCase()) < 0) return false;
   const p = priceNum(l.price), a = parseFloat(s.min), b = parseFloat(s.max);
   if (!isNaN(a) || !isNaN(b)) { if (p == null) return false; if (!isNaN(a) && p < a) return false; if (!isNaN(b) && p > b) return false; }
   return true;
@@ -191,6 +192,7 @@ function cleanListing(b, l) {
   if (b.cat !== undefined) l.cat = CATS.includes(b.cat) ? b.cat : 'other';
   ['name','price','row','shopNum','shopName','phone'].forEach(k => { if (b[k] !== undefined) l[k] = str(b[k], 80); });
   if (b.desc !== undefined) l.desc = str(b.desc, 1000);
+  if (b.material !== undefined) l.material = str(b.material, 60); // материал товара (понятное название: «Хлопок», «Натуральная кожа» и т.п.)
   if (b.contact !== undefined) l.contact = ['chat','both','phone','wa','tg'].includes(b.contact) ? b.contact : 'chat';
   if (Array.isArray(b.photos)) l.photos = b.photos.filter(p => typeof p === 'string' && (p.startsWith('data:image/') || p.startsWith('http'))).slice(0, 16);
   return l;
@@ -390,7 +392,7 @@ http.createServer((req, res) => {
     const l = db.listings[lm[1]], esc = v => String(v || '').replace(/[&<>"]/g, c => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;' })[c]);
     const tgl = l && BOT ? `https://t.me/${BOT}?start=l_${l.id}` : '';
     const html = l && !l.archived ? `<!doctype html><meta charset=utf-8><meta name=viewport content="width=device-width,initial-scale=1"><title>${esc(l.name)}</title><meta property="og:title" content="${esc(l.name + ' — ' + (l.price||''))}"><meta property="og:description" content="${esc('Ряд ' + l.row + ', магазин №' + l.shopNum)}">
-<body style="font-family:sans-serif;max-width:520px;margin:auto;padding:12px">${l.photos[0] ? `<img src="/l/${esc(l.id)}/photo" style="width:100%;border-radius:12px">` : ''}<h2>${esc(l.name)}</h2><h3>${esc(l.price || 'цена не указана')}</h3><p>📍 Ряд ${esc(l.row)}, магазин №${esc(l.shopNum)} (${esc(l.shopName)})</p><p style="white-space:pre-wrap">${esc(l.desc)}</p>${tgl ? `<a href="${tgl}" style="display:block;text-align:center;background:#2aabee;color:#fff;padding:14px;border-radius:12px;text-decoration:none">Открыть в Telegram</a>` : ''}</body>`
+<body style="font-family:sans-serif;max-width:520px;margin:auto;padding:12px">${l.photos[0] ? `<img src="/l/${esc(l.id)}/photo" style="width:100%;border-radius:12px">` : ''}<h2>${esc(l.name)}</h2><h3>${esc(l.price || 'цена не указана')}</h3><p>📍 Ряд ${esc(l.row)}, магазин №${esc(l.shopNum)} (${esc(l.shopName)})</p>${l.material ? `<p>🧵 Материал: ${esc(l.material)}</p>` : ''}<p style="white-space:pre-wrap">${esc(l.desc)}</p>${tgl ? `<a href="${tgl}" style="display:block;text-align:center;background:#2aabee;color:#fff;padding:14px;border-radius:12px;text-decoration:none">Открыть в Telegram</a>` : ''}</body>`
       : '<!doctype html><meta charset=utf-8><h3 style="font-family:sans-serif">Объявление снято с публикации</h3>';
     res.writeHead(l ? 200 : 404, { 'content-type': 'text/html; charset=utf-8' }); return res.end(html);
   }
