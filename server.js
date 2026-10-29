@@ -190,6 +190,14 @@ const route = (m, p, auth, h) => routes.push({ m, re: new RegExp('^' + p.replace
 class E extends Error { constructor(c, m) { super(m); this.code = c; } }
 const need = (c, m) => { throw new E(c, m); };
 
+route('GET', '/users/find', 1, (q, b, u) => {
+  const N = v => String(v||'').toLowerCase().replace(/ё/g,'е');
+  const t = N(str(q.q, 60)).replace(/^@/, ''), d = t.replace(/\D/g, '');
+  if (t.length < 3) return { items: [] };
+  const a = Object.values(db.users).filter(x => x.id !== u.id && ((d.length >= 6 && (x.phone||'').replace(/\D/g,'').endsWith(d.slice(-10))) || (x.username && x.username.toLowerCase() === t)
+    || N(x.name).includes(t) || N(x.shopName).includes(t))).slice(0, 20);
+  return { items: a.map(x => Object.assign(pubUser(x), { username: x.username || '' })) };
+});
 route('GET', '/', 0, () => ({ ok:true, app:'GlassMarket', bot: BOT ? '@' + BOT : null, time: now() }));
 route('GET', '/health', 0, () => ({ ok:true }));
 
@@ -266,19 +274,29 @@ route('POST', '/listings/:id/thread', 1, (q, b, u, r, p) => {   // открыт�
   if (!db.threads[tid]) { db.threads[tid] = { id: tid, listingId: l.id, buyerId: u.id, sellerId: l.sellerId, messages: [], uB:0, uS:0, createdAt: now() }; touch(); }
   return threadOut(db.threads[tid], u.id);
 });
+// --- Личные чаты с контактами (как в WhatsApp) ---
+route('POST', '/dm/:id', 1, (q, b, u, r, p) => {
+  const o = db.users[p.id] || need(404, 'Пользователь не найден'); if (o.id === u.id) need(400, 'Это вы');
+  const tid = 'dm_' + [u.id, o.id].sort().join('_');
+  if (!db.threads[tid]) { db.threads[tid] = { id: tid, listingId: null, buyerId: u.id, sellerId: o.id, messages: [], uB:0, uS:0, createdAt: now() }; touch(); }
+  return threadOut(db.threads[tid], u.id);
+});
 function myThread(p, u) { const t = db.threads[p.id] || need(404, 'Диалог не найден'); if (t.buyerId !== u.id && t.sellerId !== u.id) need(403, 'Нет доступа'); return t; }
 route('GET', '/threads/:id', 1, (q, b, u, r, p) => {
   const t = myThread(p, u); if (u.id === t.buyerId) t.uB = 0; else t.uS = 0; touch();
   const since = +q.since || 0;
-  return Object.assign(threadOut(t, u.id), { messages: t.messages.filter(m => m.t > since).map(m => ({ id:m.id, text:m.text, t:m.t, mine: m.from === u.id })) });
+  return Object.assign(threadOut(t, u.id), { messages: t.messages.filter(m => m.t > since).map(m => ({ id:m.id, text:m.text, share:m.share||null, t:m.t, mine: m.from === u.id })) });
 });
 route('POST', '/threads/:id/messages', 1, (q, b, u, r, p) => {
-  const t = myThread(p, u), text = str(b.text, 1000); if (!text) need(400, 'Пустое сообщение');
-  const m = { id: rid(4), from: u.id, text, t: now() }; t.messages.push(m);
+  const t = myThread(p, u), text = str(b.text, 1000);
+  const sh = b.share && typeof b.share === 'object' ? { id: str(b.share.id, 40), name: str(b.share.name, 120), price: str(b.share.price, 40),
+    photo: typeof b.share.photo === 'string' && b.share.photo.length < 400e3 ? b.share.photo : '' } : null;
+  if (!text && !sh) need(400, 'Пустое сообщение');
+  const m = { id: rid(4), from: u.id, text, t: now() }; if (sh) m.share = sh; t.messages.push(m);
   const toBuyer = u.id === t.sellerId; if (toBuyer) t.uB++; else t.uS++; touch();
   const l = db.listings[t.listingId] || {};
-  notify(toBuyer ? t.buyerId : t.sellerId, `💬 ${u.name || 'Пользователь'} · «${l.name || ''}»\n${text}`);
-  return { id:m.id, text:m.text, t:m.t, mine:true };
+  notify(toBuyer ? t.buyerId : t.sellerId, `💬 ${u.name || 'Пользователь'}${l.name ? ' · «' + l.name + '»' : ''}\n${text || (sh ? '📦 ' + sh.name : '')}`);
+  return { id:m.id, text:m.text, share:m.share||null, t:m.t, mine:true };
 });
 
 // --- Отзывы ---
