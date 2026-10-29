@@ -270,15 +270,37 @@ function myThread(p, u) { const t = db.threads[p.id] || need(404, 'Диалог 
 route('GET', '/threads/:id', 1, (q, b, u, r, p) => {
   const t = myThread(p, u); if (u.id === t.buyerId) t.uB = 0; else t.uS = 0; touch();
   const since = +q.since || 0;
-  return Object.assign(threadOut(t, u.id), { messages: t.messages.filter(m => m.t > since).map(m => ({ id:m.id, text:m.text, t:m.t, mine: m.from === u.id })) });
+  return Object.assign(threadOut(t, u.id), { messages: t.messages.filter(m => m.t > since).map(m => ({ id:m.id, text:m.text, t:m.t, lid:m.lid, mine: m.from === u.id })) });
 });
 route('POST', '/threads/:id/messages', 1, (q, b, u, r, p) => {
   const t = myThread(p, u), text = str(b.text, 1000); if (!text) need(400, 'Пустое сообщение');
-  const m = { id: rid(4), from: u.id, text, t: now() }; t.messages.push(m);
+  const m = { id: rid(4), from: u.id, text, t: now() }; if (b.listingId && db.listings[b.listingId]) m.lid = String(b.listingId); t.messages.push(m);
   const toBuyer = u.id === t.sellerId; if (toBuyer) t.uB++; else t.uS++; touch();
   const l = db.listings[t.listingId] || {};
-  notify(toBuyer ? t.buyerId : t.sellerId, `💬 ${u.name || 'Пользователь'} · «${l.name || ''}»\n${text}`);
-  return { id:m.id, text:m.text, t:m.t, mine:true };
+  notify(toBuyer ? t.buyerId : t.sellerId, `💬 ${u.name || 'Пользователь'}${l.name ? ' · «' + l.name + '»' : ''}\n${text}`);
+  return { id:m.id, text:m.text, t:m.t, lid:m.lid, mine:true };
+});
+
+// --- Контакты и личные чаты (без объявления) ---
+route('GET', '/contacts', 1, (q, b, u) => {
+  const seen = {}, items = [];
+  Object.values(db.threads).sort((x,y) => (y.messages.length ? y.messages[y.messages.length-1].t : y.createdAt) - (x.messages.length ? x.messages[x.messages.length-1].t : x.createdAt)).forEach(t => {
+    if (t.buyerId !== u.id && t.sellerId !== u.id) return;
+    const oid = t.buyerId === u.id ? t.sellerId : t.buyerId;
+    if (!oid || oid === u.id || seen[oid] || !db.users[oid]) return; seen[oid] = 1; items.push(pubUser(db.users[oid]));
+  });
+  return { items };
+});
+route('GET', '/contacts/find', 1, (q, b, u) => {
+  const d = String(q.phone || '').replace(/\D/g, '').slice(-10); if (d.length < 10) need(400, 'Введите номер полностью');
+  const f = Object.values(db.users).find(x => x.id !== u.id && String(x.phone || '').replace(/\D/g, '').slice(-10) === d);
+  return f ? pubUser(f) : need(404, 'Пользователь с таким номером не найден');
+});
+route('POST', '/users/:id/thread', 1, (q, b, u, r, p) => {
+  const o = db.users[p.id] || need(404, 'Нет пользователя'); if (o.id === u.id) need(400, 'Это вы');
+  const tid = 'd_' + [u.id, o.id].sort().join('_');
+  if (!db.threads[tid]) { db.threads[tid] = { id: tid, listingId: null, buyerId: u.id, sellerId: o.id, messages: [], uB:0, uS:0, createdAt: now() }; touch(); }
+  return threadOut(db.threads[tid], u.id);
 });
 
 // --- Отзывы ---
