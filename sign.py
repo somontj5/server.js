@@ -4,7 +4,8 @@ from cryptography.x509.oid import NameOID
 from cryptography.hazmat.primitives import hashes,serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
 from cryptography.hazmat.primitives.serialization import pkcs7
-src='apk';out='GlassMarket7.9.apk'
+import sys
+src=sys.argv[1] if len(sys.argv)>1 else 'apk';out=sys.argv[2] if len(sys.argv)>2 else 'GlassMarket.apk'
 kp='gm_key.pem';cp='gm_cert.pem'
 if not os.path.exists(kp):
     k=rsa.generate_private_key(public_exponent=65537,key_size=2048)
@@ -13,7 +14,7 @@ if not os.path.exists(kp):
     open(kp,'wb').write(k.private_bytes(serialization.Encoding.PEM,serialization.PrivateFormat.PKCS8,serialization.NoEncryption()))
     open(cp,'wb').write(c.public_bytes(serialization.Encoding.PEM))
 k=serialization.load_pem_private_key(open(kp,'rb').read(),None);c=x509.load_pem_x509_certificate(open(cp,'rb').read())
-orig=zipfile.ZipFile('/home/user/uploaded_files/GlassMarket7.8.apk')
+orig=zipfile.ZipFile(sys.argv[3] if len(sys.argv)>3 else '/home/user/uploaded_files/GlassMarket7.9.apk')  # исходный APK (порядок и сжатие файлов)
 names=[i.filename for i in orig.infolist() if not i.filename.startswith('META-INF/')]
 b64=lambda d:base64.b64encode(d).decode()
 mf='Manifest-Version: 1.0\r\nCreated-By: GM\r\n\r\n';sf_ent=''

@@ -23,7 +23,7 @@ Node.js 20, без зависимостей. Вход через Telegram-бот
 | GET | /listings?q=&cat=&min=&max=&sort=rec\|new\|cheap\|exp&offset=&limit= | поиск |
 | GET | /listings?seller=me&archived=0\|1 🔒 | мои активные / архив |
 | GET | /listings/:id | объявление целиком |
-| POST/PUT | /listings, /listings/:id 🔒 | создать / изменить `{cat,name,photos[],price,desc,row,shopNum,shopName,contact,phone}` |
+| POST/PUT | /listings, /listings/:id 🔒 | создать / изменить `{cat,name,photos[],price,desc,material,row,shopNum,shopName,contact,phone}` |
 | POST | /listings/:id/archive \| restore \| rise 🔒 | в архив / вернуть / ТОП на 7 дней |
 | DELETE | /listings/:id 🔒 | удалить |
 | GET/POST/DELETE | /favorites, /favorites/:id 🔒 | избранное |
