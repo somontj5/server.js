@@ -1,3 +1,6 @@
 node_modules
 data/
 cf.log
+
+gm_key.pem
+*.key
