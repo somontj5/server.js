@@ -309,6 +309,19 @@ route('POST', '/threads/:id/messages', 1, (q, b, u, r, p) => {
   return { id:m.id, text:m.text, t:m.t, lid:m.lid, mine:true };
 });
 
+// --- Новые входящие сообщения для системных уведомлений Android (фоновая служба приложения) ---
+route('GET', '/updates', 1, (q, b, u) => {
+  const since = +q.since || 0, items = [];
+  for (const t of Object.values(db.threads)) {
+    if (t.buyerId !== u.id && t.sellerId !== u.id) continue;
+    const ms = t.messages.filter(m => m.t > since && m.from !== u.id);
+    if (!ms.length) continue;
+    const o = db.users[ms[ms.length-1].from] || {}, l = db.listings[t.listingId] || {};
+    items.push({ tid: t.id, name: o.shopName || o.name || 'Пользователь', item: l.name || '', messages: ms.slice(-5).map(m => m.text || (m.lid ? 'Объявление' : 'Сообщение')) });
+  }
+  return { now: now(), items };
+});
+
 // --- Контакты и личные чаты (без объявления) ---
 route('GET', '/contacts', 1, (q, b, u) => {
   const seen = {}, items = [];
