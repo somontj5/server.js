@@ -19,6 +19,9 @@ const rid = (n=6) => crypto.randomBytes(n).toString('hex');
 const now = () => Date.now();
 const str = (v, max=200) => (v == null ? '' : String(v)).trim().slice(0, max);
 const priceNum = p => { const m = String(p||'').replace(/\s/g,'').match(/\d+([.,]\d+)?/); return m ? parseFloat(m[0].replace(',','.')) : null; };
+// Таджикистан: +992 и ровно 9 цифр; ряд и магазин — только цифры
+const onlyDigits = v => String(v == null ? '' : v).replace(/\D/g, '');
+function tjPhone(v) { let d = onlyDigits(v); if (!d) return ''; if (d.startsWith('992')) d = d.slice(3); if (d.length !== 9) need(400, 'Номер телефона: +992 и 9 цифр'); return '+992 ' + d.slice(0,2) + ' ' + d.slice(2,5) + ' ' + d.slice(5,7) + ' ' + d.slice(7); }
 const isTop = l => l.boostedUntil && l.boostedUntil > now();
 
 /* ================= Telegram ================= */
@@ -190,7 +193,10 @@ function matches(l, s) {
 function cleanListing(b, l) {
   l = l || {};
   if (b.cat !== undefined) l.cat = CATS.includes(b.cat) ? b.cat : 'other';
-  ['name','price','row','shopNum','shopName','phone'].forEach(k => { if (b[k] !== undefined) l[k] = str(b[k], 80); });
+  ['name','price','shopName'].forEach(k => { if (b[k] !== undefined) l[k] = str(b[k], 80); });
+  if (b.row !== undefined) l.row = onlyDigits(b.row).slice(0, 4);
+  if (b.shopNum !== undefined) l.shopNum = onlyDigits(b.shopNum).slice(0, 6);
+  if (b.phone !== undefined) { try { l.phone = tjPhone(b.phone); } catch { l.phone = ''; } } // старые номера (не +992) просто сбрасываем
   if (b.desc !== undefined) l.desc = str(b.desc, 1000);
   if (b.material !== undefined) l.material = str(b.material, 60); // материал товара (понятное название: «Хлопок», «Натуральная кожа» и т.п.)
   if (b.contact !== undefined) l.contact = ['chat','both','phone','wa','tg'].includes(b.contact) ? b.contact : 'chat';
@@ -231,7 +237,8 @@ route('POST', '/auth/logout', 1, (q, b, u, req) => { delete db.sessions[req.toke
 
 // --- Профиль ---
 route('GET', '/me', 1, (q, b, u) => meUser(u));
-route('PUT', '/me', 1, (q, b, u) => { ['name','shopName','row','shopNum','phone'].forEach(k => { if (b[k] !== undefined) u[k] = str(b[k], 60); }); if (b.about !== undefined) u.about = str(b.about, 200); touch(); return meUser(u); });
+route('PUT', '/me', 1, (q, b, u) => { ['name','shopName'].forEach(k => { if (b[k] !== undefined) u[k] = str(b[k], 60); });
+  if (b.row !== undefined) u.row = onlyDigits(b.row).slice(0, 4); if (b.shopNum !== undefined) u.shopNum = onlyDigits(b.shopNum).slice(0, 6); if (b.phone !== undefined) u.phone = tjPhone(b.phone); if (b.about !== undefined) u.about = str(b.about, 200); touch(); return meUser(u); });
 route('GET', '/users/:id', 0, (q, b, u, r, p) => pubUser(db.users[p.id]) || need(404, 'Нет пользователя'));
 
 // --- Объявления ---
@@ -313,8 +320,8 @@ route('GET', '/contacts', 1, (q, b, u) => {
   return { items };
 });
 route('GET', '/contacts/find', 1, (q, b, u) => {
-  const d = String(q.phone || '').replace(/\D/g, '').slice(-10); if (d.length < 10) need(400, 'Введите номер полностью');
-  const f = Object.values(db.users).find(x => x.id !== u.id && String(x.phone || '').replace(/\D/g, '').slice(-10) === d);
+  const d = onlyDigits(q.phone).slice(-9); if (d.length < 9) need(400, 'Введите номер полностью: +992 и 9 цифр');
+  const f = Object.values(db.users).find(x => x.id !== u.id && onlyDigits(x.phone).slice(-9) === d);
   return f ? pubUser(f) : need(404, 'Пользователь с таким номером не найден');
 });
 route('POST', '/users/:id/thread', 1, (q, b, u, r, p) => {
