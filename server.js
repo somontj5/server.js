@@ -517,7 +517,9 @@ route('GET', '/users/:id/reviews', 0, (q, b, u, r, p) => {
 route('POST', '/users/:id/reviews', 1, (q, b, u, r, p) => {
   if (p.id === u.id) need(400, 'Нельзя оценить себя');
   if (!db.users[p.id]) need(404, 'Нет продавца');
-  const t = Object.values(db.threads).find(t => t.sellerId === p.id && t.buyerId === u.id) || { listingId: b.listingId };
+  const t = Object.values(db.threads).find(t => ((t.sellerId === p.id && t.buyerId === u.id) || (t.sellerId === u.id && t.buyerId === p.id)) && (t.messages || []).length);
+  if (!t) need(403, 'Отзыв можно оставить после переписки с продавцом');
+  if (t.listingId == null && b.listingId) t.listingId = b.listingId;
   const stars = Math.max(1, Math.min(5, Math.round(+b.stars || 0))), text = str(b.text, 500);
   if (!stars) need(400, 'Поставьте оценку 1–5');
   db.reviews = db.reviews.filter(x => !(x.sellerId === p.id && x.authorId === u.id));
