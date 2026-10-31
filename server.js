@@ -211,7 +211,7 @@ setInterval(() => { if (GKEY) { const l = Object.values(db.listings).find(x => !
 for (const l of Object.values(db.listings)) { l.tags = makeTags(l); touch(); }   // пересчёт при старте (новые правила тегов)
 
 /* ================= Представления ================= */
-const pubUser = u => u && ({ id:u.id, name:u.name, shopName:u.shopName, row:u.row, shopNum:u.shopNum, about:u.about||'', rating: rating(u.id), ig: u.ig || '', igInfo: u.ig ? igPub(u.ig) : null });
+const pubUser = u => u && ({ id:u.id, name:u.name, shopName:u.shopName, row:u.row, shopNum:u.shopNum, about:u.about||'', rating: rating(u.id), ig: u.ig || '', igInfo: u.ig ? igPub(u.ig) : null, avatar: u.avatar ? '/u/' + u.id + '/avatar?v=' + (u.avTs || 0) : '' });
 // ===== Instagram: плашка аккаунта продавца (публичные данные профиля, кэш 12 ч) =====
 const IGC = {}; // username -> { t, d:{ name, pic, followers, following, posts, bio, verified, priv } | null }
 function igNorm(v) { let s = String(v == null ? '' : v).trim(); const m = s.match(/instagram\.com\/([A-Za-z0-9._]+)/i); if (m) s = m[1]; s = s.replace(/^@+/, '').toLowerCase();
@@ -333,7 +333,7 @@ route('POST', '/auth/logout', 1, (q, b, u, req) => { delete db.sessions[req.toke
 // --- Профиль ---
 route('GET', '/me', 1, (q, b, u) => meUser(u));
 route('PUT', '/me', 1, (q, b, u) => { ['name','shopName'].forEach(k => { if (b[k] !== undefined) u[k] = str(b[k], 60); });
-  if (b.row !== undefined) u.row = onlyDigits(b.row).slice(0, 4); if (b.shopNum !== undefined) { const sn = onlyDigits(b.shopNum).replace(/^0+/, '').slice(0, 4); checkShop(sn, u.id, u.shopNum); u.shopNum = sn; } if (b.phone !== undefined) u.phone = tjPhone(b.phone); if (b.about !== undefined) u.about = str(b.about, 200); if (b.ig !== undefined) { u.ig = igNorm(b.ig); if (u.ig) igLoad(u.ig); } touch(); return meUser(u); });
+  if (b.row !== undefined) u.row = onlyDigits(b.row).slice(0, 4); if (b.shopNum !== undefined) { const sn = onlyDigits(b.shopNum).replace(/^0+/, '').slice(0, 4); checkShop(sn, u.id, u.shopNum); u.shopNum = sn; } if (b.phone !== undefined) u.phone = tjPhone(b.phone); if (b.about !== undefined) u.about = str(b.about, 200); if (b.ig !== undefined) { u.ig = igNorm(b.ig); if (u.ig) igLoad(u.ig); } if (b.avatar !== undefined) { if (!b.avatar) { delete u.avatar; } else { if (!/^data:image\/(jpeg|png|webp);base64,/.test(b.avatar) || b.avatar.length > 400e3) need(400, 'Фото слишком большое'); u.avatar = b.avatar; u.avTs = now(); } } touch(); return meUser(u); });
 route('GET', '/ig/:name', 0, async (q, b, u, r, p) => { const un = igNorm(p.name); if (!un) need(400, 'Пустой ник'); if (!IGC[un] || !IGC[un].d) await igLoad(un); return { ig: un, igInfo: igPub(un) }; });
 route('GET', '/users/:id', 0, (q, b, u, r, p) => pubUser(db.users[p.id]) || need(404, 'Нет пользователя'));
 
@@ -565,12 +565,15 @@ route('GET', '/me/interests', 1, (q, b, u) => {   // отладка: что си
 route('DELETE', '/me/interests', 1, (q, b, u) => { u.interests = {}; u.seen = []; u.hidden = []; touch(); return { ok:true }; });
 
 function send(res, code, obj) {
-  res.writeHead(code, { 'content-type':'application/json; charset=utf-8', 'access-control-allow-origin':'*', 'cache-control':'no-store',
-    'access-control-allow-headers':'content-type, authorization', 'access-control-allow-methods':'GET, POST, PUT, DELETE, OPTIONS' });
-  const body = JSON.stringify(obj), ae = (res.req && res.req.headers['accept-encoding']) || '';
-  if (body.length > 1024 && /gzip/.test(ae)) { res.setHeader('content-encoding', 'gzip'); res.setHeader('vary', 'accept-encoding'); return res.end(require('zlib').gzipSync(body, { level: 4 })); }
-  res.end(body);
+  if (res.headersSent || res.writableEnded) return;
+  const body = JSON.stringify(obj), ae = (res.req && res.req.headers['accept-encoding']) || '', gz = body.length > 1024 && /gzip/.test(ae);
+  const h = { 'content-type':'application/json; charset=utf-8', 'access-control-allow-origin':'*', 'cache-control':'no-store',
+    'access-control-allow-headers':'content-type, authorization', 'access-control-allow-methods':'GET, POST, PUT, DELETE, OPTIONS' };
+  if (gz) { h['content-encoding'] = 'gzip'; h.vary = 'accept-encoding'; }
+  res.writeHead(code, h); res.end(gz ? require('zlib').gzipSync(body, { level: 4 }) : body);
 }
+process.on('uncaughtException', e => console.error('uncaught:', e));
+process.on('unhandledRejection', e => console.error('unhandled:', e));
 http.createServer((req, res) => {
   if (req.method === 'OPTIONS') return send(res, 204, {});
   const url = new URL(req.url, 'http://x'), q = Object.fromEntries(url.searchParams);
@@ -589,6 +592,9 @@ http.createServer((req, res) => {
     if (ph) { res.writeHead(302, { location: ph }); return res.end(); } res.writeHead(404); return res.end(); }
   const im = req.method === 'GET' && url.pathname.match(/^\/ig\/([a-z0-9._]{1,30})\/pic$/);
   if (im) { const d = IGC[im[1]] && IGC[im[1]].d; if (d && d.picBuf) { res.writeHead(200, { 'content-type': d.picType, 'cache-control': 'max-age=43200', 'access-control-allow-origin': '*' }); return res.end(d.picBuf); } res.writeHead(404); return res.end(); }
+  const am = req.method === 'GET' && url.pathname.match(/^\/u\/([\w-]+)\/avatar$/);
+  if (am) { const au = db.users[am[1]], m = au && au.avatar && au.avatar.match(/^data:(image\/\w+);base64,(.+)$/);
+    if (m) { res.writeHead(200, { 'content-type': m[1], 'cache-control': 'max-age=86400', 'access-control-allow-origin': '*' }); return res.end(Buffer.from(m[2], 'base64')); } res.writeHead(404); return res.end(); }
   const rt = routes.find(r => r.m === req.method && r.re.test(url.pathname));
   if (!rt) return send(res, 404, { error:'Не найдено' });
   let size = 0, chunks = [];
