@@ -211,7 +211,35 @@ setInterval(() => { if (GKEY) { const l = Object.values(db.listings).find(x => !
 for (const l of Object.values(db.listings)) { l.tags = makeTags(l); touch(); }   // пересчёт при старте (новые правила тегов)
 
 /* ================= Представления ================= */
-const pubUser = u => u && ({ id:u.id, name:u.name, shopName:u.shopName, row:u.row, shopNum:u.shopNum, about:u.about||'', rating: rating(u.id) });
+const pubUser = u => u && ({ id:u.id, name:u.name, shopName:u.shopName, row:u.row, shopNum:u.shopNum, about:u.about||'', rating: rating(u.id), ig: u.ig || '', igInfo: u.ig ? igPub(u.ig) : null });
+// ===== Instagram: плашка аккаунта продавца (публичные данные профиля, кэш 12 ч) =====
+const IGC = {}; // username -> { t, d:{ name, pic, followers, following, posts, bio, verified, priv } | null }
+function igNorm(v) { let s = String(v == null ? '' : v).trim(); const m = s.match(/instagram\.com\/([A-Za-z0-9._]+)/i); if (m) s = m[1]; s = s.replace(/^@+/, '').toLowerCase();
+  if (!s) return ''; if (!/^[a-z0-9._]{1,30}$/.test(s)) need(400, 'Instagram: латиница, цифры, точка и _ (до 30 символов)'); return s; }
+function igPub(un) { const c = IGC[un]; if (!c || now() - c.t > 12 * 3600e3) igLoad(un); const d = c && c.d; if (!d) return null;
+  const o = Object.assign({}, d, { pic: d.picBuf ? '/ig/' + un + '/pic' : '' }); delete o.picBuf; delete o.picType; return o; }
+async function igLoad(un) {
+  if (IGC[un] && IGC[un].busy) return; IGC[un] = Object.assign(IGC[un] || { t: 0, d: null }, { busy: 1 });
+  const UA = 'Mozilla/5.0 (Linux; Android 13; Pixel 7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Mobile Safari/537.36';
+  let d = null;
+  try { // 1) JSON-эндпоинт веб-версии
+    const r = await fetch('https://i.instagram.com/api/v1/users/web_profile_info/?username=' + un, { headers: { 'x-ig-app-id': '936619743392459', 'user-agent': UA }, signal: AbortSignal.timeout(8000) });
+    if (r.ok) { const u = ((await r.json()).data || {}).user; if (u) d = { name: u.full_name || '', picUrl: u.profile_pic_url_hd || u.profile_pic_url, followers: u.edge_followed_by && u.edge_followed_by.count,
+      following: u.edge_follow && u.edge_follow.count, posts: u.edge_owner_to_timeline_media && u.edge_owner_to_timeline_media.count, bio: (u.biography || '').slice(0, 160), verified: !!u.is_verified, priv: !!u.is_private }; }
+  } catch {}
+  if (!d) try { // 2) запасной путь: og-теги страницы профиля
+    const h = await (await fetch('https://www.instagram.com/' + un + '/', { headers: { 'user-agent': 'facebookexternalhit/1.1' }, signal: AbortSignal.timeout(8000) })).text();
+    const og = k => { const m = h.match(new RegExp('property="og:' + k + '" content="([^"]*)"')); return m ? m[1].replace(/&amp;/g, '&').replace(/&#064;/g, '@').replace(/&quot;/g, '"') : ''; };
+    const desc = og('description'), img = og('image'); const num = re => { const m = desc.match(re); if (!m) return undefined; let x = parseFloat(m[1].replace(/,/g, '')); if (/K/i.test(m[2])) x *= 1e3; if (/M/i.test(m[2])) x *= 1e6; return Math.round(x); };
+    if (img || desc) d = { name: (og('title').split(/\s*\(@/)[0] || '').trim(), picUrl: img, followers: num(/([\d.,]+)([KM]?)\s+Followers/i), following: num(/([\d.,]+)([KM]?)\s+Following/i), posts: num(/([\d.,]+)([KM]?)\s+Posts/i), bio: '', verified: false, priv: false };
+  } catch {}
+  if (d && d.picUrl) try { // аватар храним у себя (ссылки CDN Instagram протухают)
+    const r = await fetch(d.picUrl, { headers: { 'user-agent': UA }, signal: AbortSignal.timeout(8000) });
+    if (r.ok) { const b = Buffer.from(await r.arrayBuffer()); if (b.length < 600e3) { d.picBuf = b; d.picType = r.headers.get('content-type') || 'image/jpeg'; } }
+  } catch {}
+  if (d) delete d.picUrl;
+  IGC[un] = { t: now(), d: d || (IGC[un] && IGC[un].d) || null }; // при ошибке оставляем прошлые данные
+}
 const meUser = u => Object.assign(pubUser(u), { phone:u.phone });
 function rating(uid) { const a = db.reviews.filter(r => r.sellerId === uid); return { n:a.length, avg: a.length ? +(a.reduce((s,r)=>s+r.stars,0)/a.length).toFixed(2) : 0 }; }
 const dayKey = () => new Date().toISOString().slice(0,10);
@@ -260,7 +288,7 @@ function cleanListing(b, l) {
   if (b.cat !== undefined) l.cat = CATS.includes(b.cat) ? b.cat : 'other';
   ['name','price','shopName'].forEach(k => { if (b[k] !== undefined) l[k] = str(b[k], 80); });
   if (b.row !== undefined) l.row = onlyDigits(b.row).slice(0, 4);
-  if (b.shopNum !== undefined) l.shopNum = onlyDigits(b.shopNum).slice(0, 6);
+  if (b.shopNum !== undefined) l.shopNum = onlyDigits(b.shopNum).replace(/^0+/, '').slice(0, 4); // контейнер 1..9999
   if (b.phone !== undefined) { try { l.phone = tjPhone(b.phone); } catch { l.phone = ''; } } // старые номера (не +992) просто сбрасываем
   if (b.desc !== undefined) l.desc = str(b.desc, 1000);
   if (b.sub !== undefined) l.sub = SUBS.includes(b.sub) ? b.sub : '';
@@ -305,7 +333,8 @@ route('POST', '/auth/logout', 1, (q, b, u, req) => { delete db.sessions[req.toke
 // --- Профиль ---
 route('GET', '/me', 1, (q, b, u) => meUser(u));
 route('PUT', '/me', 1, (q, b, u) => { ['name','shopName'].forEach(k => { if (b[k] !== undefined) u[k] = str(b[k], 60); });
-  if (b.row !== undefined) u.row = onlyDigits(b.row).slice(0, 4); if (b.shopNum !== undefined) u.shopNum = onlyDigits(b.shopNum).slice(0, 6); if (b.phone !== undefined) u.phone = tjPhone(b.phone); if (b.about !== undefined) u.about = str(b.about, 200); touch(); return meUser(u); });
+  if (b.row !== undefined) u.row = onlyDigits(b.row).slice(0, 4); if (b.shopNum !== undefined) { const sn = onlyDigits(b.shopNum).replace(/^0+/, '').slice(0, 4); checkShop(sn, u.id, u.shopNum); u.shopNum = sn; } if (b.phone !== undefined) u.phone = tjPhone(b.phone); if (b.about !== undefined) u.about = str(b.about, 200); if (b.ig !== undefined) { u.ig = igNorm(b.ig); if (u.ig) igLoad(u.ig); } touch(); return meUser(u); });
+route('GET', '/ig/:name', 0, async (q, b, u, r, p) => { const un = igNorm(p.name); if (!un) need(400, 'Пустой ник'); if (!IGC[un] || !IGC[un].d) await igLoad(un); return { ig: un, igInfo: igPub(un) }; });
 route('GET', '/users/:id', 0, (q, b, u, r, p) => pubUser(db.users[p.id]) || need(404, 'Нет пользователя'));
 
 // --- Объявления ---
@@ -339,21 +368,40 @@ route('GET', '/suggest', 0, (q) => {
   return { items: Object.keys(cnt).sort((a, b) => cnt[b] - cnt[a] || a.length - b.length).slice(0, 8), q: n !== raw ? n : undefined };
 });
 route('GET', '/listings/:id', 0, (q, b, u, r, p) => { const l = db.listings[p.id] || need(404, 'Объявление не найдено'); l.views = (l.views||0) + 1; bump(l, 'v'); learnListing(u, l, 'view'); touch(); return listingOut(l, true); });
+// Контейнер (магазин №): 1..9999, один номер — один продавец
+function shopOwner(num, exceptId) {
+  if (!num) return null;
+  for (const x of Object.values(db.users)) if (x.id !== exceptId && x.shopNum === num) return x;
+  for (const x of Object.values(db.listings)) if (x.sellerId !== exceptId && !x.archived && x.shopNum === num) return db.users[x.sellerId] || { id: x.sellerId };
+  return null;
+}
+function checkShop(num, uid, cur) {
+  if (!num || num === cur) return; // свой текущий номер не проверяем (старые данные)
+  const n = +num; if (!(n >= 1 && n <= 9999)) need(400, 'Номер контейнера: от 1 до 9999');
+  if (shopOwner(num, uid)) need(409, `Контейнер №${num} уже занят другим продавцом`);
+}
+function fillAddr(b, u) { // адрес продавца, указанный один раз, подставляется автоматически
+  for (const k of ['row', 'shopNum', 'shopName']) if (!String(b[k] == null ? '' : b[k]).trim() && u[k]) b[k] = u[k];
+  if (!String(b.phone || '').trim() && u.phone) b.phone = u.phone;
+}
+function saveAddr(u, l) { u.shopName = l.shopName; u.row = l.row; u.shopNum = l.shopNum; if (l.phone && !u.phone) u.phone = l.phone; }
 route('POST', '/listings', 1, (q, b, u) => {
+  fillAddr(b, u);
   const l = cleanListing(b, { id: rid(5), sellerId: u.id, createdAt: now(), views:0, contact:'chat', photos:[] });
   if (!l.name || l.name.length < 3) need(400, 'Название от 3 символов');
   if (!l.cat) need(400, 'Выберите категорию');
   if (!l.photos.length) need(400, 'Добавьте фото');
   if (!l.row || !l.shopNum || !l.shopName) need(400, 'Укажите ряд, номер и название магазина');
+  checkShop(l.shopNum, u.id, u.shopNum);
   l.tags = makeTags(l); db.listings[l.id] = l;
-  if (!u.shopName) { u.shopName = l.shopName; u.row = l.row; u.shopNum = l.shopNum; }
+  saveAddr(u, l);
   touch();
   // уведомления по сохранённым поискам
   for (const s of Object.values(db.searches)) if (s.userId !== u.id && matches(l, s)) notify(s.userId, `🔔 Новое по вашему поиску «${s.title}»:\n${l.name} — ${l.price || 'цена не указана'}\nРяд ${l.row}, магазин №${l.shopNum}`);
   return listingOut(l, true);
 });
 function own(p, u) { const l = db.listings[p.id] || need(404, 'Объявление не найдено'); if (l.sellerId !== u.id) need(403, 'Это не ваше объявление'); return l; }
-route('PUT', '/listings/:id', 1, (q, b, u, r, p) => { const l = cleanListing(b, own(p, u)); l.updatedAt = now(); l.aiAt = 0; l.tags = makeTags(l); touch(); return listingOut(l, true); });
+route('PUT', '/listings/:id', 1, (q, b, u, r, p) => { fillAddr(b, u); if (b.shopNum !== undefined) checkShop(onlyDigits(b.shopNum).replace(/^0+/, '').slice(0, 4), u.id, u.shopNum); const l = cleanListing(b, own(p, u)); saveAddr(u, l); l.updatedAt = now(); l.aiAt = 0; l.tags = makeTags(l); touch(); return listingOut(l, true); });
 route('POST', '/listings/:id/archive', 1, (q, b, u, r, p) => { const l = own(p, u); l.archived = true; touch(); return listingOut(l, true); });
 route('POST', '/listings/:id/restore', 1, (q, b, u, r, p) => { const l = own(p, u); l.archived = false; l.createdAt = now(); touch(); return listingOut(l, true); });
 route('POST', '/listings/:id/rise', 1, (q, b, u, r, p) => { const l = own(p, u); l.boostedUntil = now() + 7*864e5; l.freeRiseUsed = true; touch(); return listingOut(l, true); });
@@ -539,6 +587,8 @@ http.createServer((req, res) => {
   if (pm) { const l = db.listings[pm[1]], ph = l && l.photos[0], m = ph && ph.match(/^data:(image\/\w+);base64,(.+)$/);
     if (m) { res.writeHead(200, { 'content-type': m[1], 'cache-control': 'max-age=86400' }); return res.end(Buffer.from(m[2], 'base64')); }
     if (ph) { res.writeHead(302, { location: ph }); return res.end(); } res.writeHead(404); return res.end(); }
+  const im = req.method === 'GET' && url.pathname.match(/^\/ig\/([a-z0-9._]{1,30})\/pic$/);
+  if (im) { const d = IGC[im[1]] && IGC[im[1]].d; if (d && d.picBuf) { res.writeHead(200, { 'content-type': d.picType, 'cache-control': 'max-age=43200', 'access-control-allow-origin': '*' }); return res.end(d.picBuf); } res.writeHead(404); return res.end(); }
   const rt = routes.find(r => r.m === req.method && r.re.test(url.pathname));
   if (!rt) return send(res, 404, { error:'Не найдено' });
   let size = 0, chunks = [];
@@ -549,7 +599,9 @@ http.createServer((req, res) => {
       const tok = (req.headers.authorization || '').replace(/^Bearer\s+/i, ''); req.token = tok;
       const s = db.sessions[tok], u = s && db.users[s.userId];
       if (rt.auth && !u) need(401, 'Требуется вход');
-      send(res, 200, rt.h(q, b, u, req, url.pathname.match(rt.re).groups || {}));
+      const out = rt.h(q, b, u, req, url.pathname.match(rt.re).groups || {});
+      if (out && typeof out.then === 'function') return out.then(v => send(res, 200, v), e => { if (!(e instanceof E)) console.error(e); send(res, e.code || 500, { error: e.message || 'Ошибка сервера' }); });
+      send(res, 200, out);
     } catch (e) { if (!(e instanceof E)) console.error(e); send(res, e.code || 500, { error: e.message || 'Ошибка сервера' }); }
   });
 }).listen(PORT, '0.0.0.0', () => console.log(`Сервер: http://0.0.0.0:${PORT}` + (PUB ? `  публичный: ${PUB}` : '')));
