@@ -58,7 +58,6 @@ jobs:
       - name: Run server (~5h50m)
         env:
           BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
-          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           PUBLIC_URL: ${{ env.PUBLIC_URL }}
         run: timeout -s TERM 350m node server.js || true
 
