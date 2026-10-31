@@ -106,12 +106,35 @@ function notify(userId, text) { const u = db.users[userId]; if (u && !u.mute) sa
 const STOP = new Set('для или при без под над все это как что так его она они уже еще очень новый новая новое продам продаю цена торг срочно'.split(' '));
 const stem = w => w.length > 6 ? w.slice(0, w.length - 2) : w;   // «стеклянный» ≈ «стеклянная»
 function words(t) { return (String(t||'').toLowerCase().replace(/ё/g,'е').match(/[a-zа-я0-9]{3,}/g) || []).filter(w => !STOP.has(w) && !/^\d+$/.test(w)).map(stem); }
+// Одежда: подкатегория приложения (outer, knit, tops…) + группы синонимов, чтобы «худи» ≈ «толстовка», «кросы» ≈ «кроссовки»
+const SUBS = ['outer','dress','tops','knit','pants','suits','sport','under','home','shoes','bags','acc','kids','other'];
+const SYN = {
+  outer:'куртк пуховик парк ветровк бомбер косух пальто плащ тренч шуб дублен жилет анорак кожанк',
+  knit:'худи толстовк свитшот кофт свитер джемпер кардиган водолазк лонгслив пуловер олимпийк зипк',
+  tops:'футболк майк поло рубашк блузк блуз топ туник кроп',
+  pants:'джинс брюк штан шорт леггинс лосин чинос карго джоггер бридж',
+  dress:'плать сарафан юбк',
+  suits:'костюм пиджак жакет двойк тройк блейзер',
+  sport:'спорт тренировоч рашгард велосипедк фитнес adidas nike puma',
+  under:'бель трус бюстгальтер лифчик боксер носк колготк купальник плавк',
+  home:'пижам халат домашн тапочк тапк',
+  shoes:'кроссовк кед сникерс ботинк сапог туфл лофер босоножк сандал шлепан угг мокасин балетк крос обув берц челси',
+  bags:'сумк рюкзак портфел клатч барсетк шоппер кошел бананк',
+  acc:'шапк кепк бейсболк шарф перчатк варежк ремен очк панам платок бандан галстук час снуд берет'
+};
+const W2S = []; for (const k in SYN) for (const r of SYN[k].split(' ')) W2S.push([r, k]);
+const subOf = w => { for (const [r, k] of W2S) if (w.startsWith(r)) return k; return null; };
+const ATTR = { gender:1, color:1, season:1, size:1, mat:1, style:1, cond:1 };
 function priceTag(p) { const n = priceNum(p); if (n == null) return null; return 'p:' + (n < 500 ? 0 : n < 2000 ? 1 : n < 10000 ? 2 : n < 50000 ? 3 : 4); }
 function makeTags(l) {
   const t = new Set(['c:' + l.cat]);
   words(l.name).forEach(w => t.add('w:' + w));
   words(l.desc).slice(0, 30).forEach(w => t.add('w:' + w));
   words(l.material).forEach(w => t.add('w:' + w));
+  if (l.sub) t.add('g:' + l.sub);
+  for (const w of words(l.name)) { const g = subOf(w); if (g) t.add('g:' + g); }       // «Худи оверсайз» → g:knit, даже если подкатегория не указана
+  const a = l.a || {}; for (const k in a) if (ATTR[k] && a[k] && a[k] !== 'Без размера') t.add('a:' + k + ':' + String(a[k]).toLowerCase());
+  (l.ai || []).forEach(x => t.add('x:' + x));                                            // теги от Gemini (если включён)
   const pt = priceTag(l.price); if (pt) t.add(pt);
   if (l.sellerId) t.add('s:' + l.sellerId);
   if (l.row) t.add('r:' + String(l.row).toLowerCase());
@@ -123,7 +146,7 @@ function learn(u, tags, kind) {
   if (!u || !tags || !tags.length) return;
   const w = W[kind] || 1, t = now(), I = u.interests = u.interests || {};
   for (const tag of tags) {
-    const k = tag.startsWith('w:') ? 1 : tag.startsWith('c:') ? 0.7 : tag.startsWith('s:') ? 0.8 : 0.5; // слова весомее
+    const k = { w:1, g:1.3, x:1.1, c:0.4, s:0.8, a:0.7 }[tag[0]] || 0.5; if (tag.startsWith('a:size') || tag.startsWith('a:gender')) { /* пол и размер — стабильные предпочтения */ }
     const v = (I[tag] ? decayed(I[tag], t) : 0) + w * k;
     I[tag] = [+Math.max(-20, Math.min(50, v)).toFixed(3), t];
   }
@@ -137,7 +160,7 @@ function learnListing(u, l, kind) {
   if (kind === 'view') { u.seen = (u.seen || []).filter(x => x !== l.id); u.seen.push(l.id); if (u.seen.length > 200) u.seen.shift(); }
   if (kind === 'hide') { u.hidden = u.hidden || []; if (!u.hidden.includes(l.id)) u.hidden.push(l.id); if (u.hidden.length > 500) u.hidden.shift(); }
 }
-const learnQuery = (u, s, kind) => learn(u, [...words(s.q).map(w => 'w:' + w), ...(s.cat && s.cat !== 'all' ? ['c:' + s.cat] : [])], kind);
+const learnQuery = (u, s, kind) => { const ws = words(s.q); learn(u, [...ws.map(w => 'w:' + w), ...ws.map(subOf).filter(Boolean).map(g => 'g:' + g), ...(s.cat && SUBS.includes(s.cat) ? ['g:' + s.cat] : [])], kind); };
 function hash(s) { let h = 2166136261; for (let i = 0; i < s.length; i++) h = Math.imul(h ^ s.charCodeAt(i), 16777619); return (h >>> 0) / 4294967296; }
 function recommend(arr, u) {
   const t = now(), I = (u && u.interests) || {}, day = Math.floor(t / 864e5);
@@ -162,13 +185,26 @@ function recommend(arr, u) {
   while (main.length || explore.length) {
     let src = (out.length % 5 === 4 && explore.length) || !main.length ? explore : main;
     let i = 0;
-    if (src === main && out.length >= 3 && out.slice(-3).every(l => l.cat === out[out.length-1].cat)) { const j = main.findIndex(x => x.l.cat !== out[out.length-1].cat); if (j >= 0) i = j; }
+    if (src === main && out.length >= 3 && out.slice(-3).every(l => (l.sub||l.cat) === (out[out.length-1].sub||out[out.length-1].cat))) { const j = main.findIndex(x => (x.l.sub||x.l.cat) !== (out[out.length-1].sub||out[out.length-1].cat)); if (j >= 0) i = j; }
     out.push(src.splice(i, 1)[0].l);
   }
   return out;
 }
+// Gemini (необязательно, нужен GEMINI_API_KEY): 3–6 скрытых тегов стиля/назначения, напр. «оверсайз», «офис», «вечерний»
+const GKEY = process.env.GEMINI_API_KEY || '';
+async function aiTags(l) {
+  if (!GKEY || l.aiAt) return; l.aiAt = now();
+  try {
+    const prompt = `Объявление одежды. Верни JSON-массив из 3-6 коротких тегов на русском в нижнем регистре: стиль, назначение, фасон, для кого (без цены и цвета). Название: ${l.name}. Описание: ${(l.desc||'').slice(0,400)}. Материал: ${l.material||''}`;
+    const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${GKEY}`, { method:'POST', headers:{'content-type':'application/json'},
+      body: JSON.stringify({ contents:[{ parts:[{ text: prompt }] }], generationConfig:{ responseMimeType:'application/json', temperature:0.2 } }) });
+    const j = await r.json(), arr = JSON.parse(j.candidates[0].content.parts[0].text);
+    if (Array.isArray(arr)) { l.ai = arr.map(x => stem(str(x, 24).toLowerCase())).filter(Boolean).slice(0, 6); l.tags = makeTags(l); touch(); }
+  } catch (e) { console.error('gemini', e.message); }
+}
+setInterval(() => { if (GKEY) { const l = Object.values(db.listings).find(x => !x.aiAt && !x.archived); if (l) aiTags(l); } }, 5000);
 // миграция: проставить теги старым объявлениям
-for (const l of Object.values(db.listings)) if (!l.tags) { l.tags = makeTags(l); touch(); }
+for (const l of Object.values(db.listings)) { l.tags = makeTags(l); touch(); }   // пересчёт при старте (новые правила тегов)
 
 /* ================= Представления ================= */
 const pubUser = u => u && ({ id:u.id, name:u.name, shopName:u.shopName, row:u.row, shopNum:u.shopNum, about:u.about||'', rating: rating(u.id) });
@@ -185,7 +221,8 @@ function listingOut(l, full) {
 function matches(l, s) {
   if (l.archived) return false;
   if (s.cat && s.cat !== 'all' && l.cat !== s.cat) return false;
-  if (s.q && (l.name + ' ' + l.shopName + ' ' + l.desc + ' ' + (l.material||'')).toLowerCase().indexOf(String(s.q).toLowerCase()) < 0) return false;
+  if (s.q) { const tg = new Set(l.tags || (l.tags = makeTags(l))), qs = words(s.q);
+    if (qs.length && !qs.every(w => tg.has('w:' + w) || [...tg].some(x => x.startsWith('w:' + w.slice(0, 4))) || (subOf(w) && tg.has('g:' + subOf(w))))) return false; }
   const p = priceNum(l.price), a = parseFloat(s.min), b = parseFloat(s.max);
   if (!isNaN(a) || !isNaN(b)) { if (p == null) return false; if (!isNaN(a) && p < a) return false; if (!isNaN(b) && p > b) return false; }
   return true;
@@ -198,6 +235,8 @@ function cleanListing(b, l) {
   if (b.shopNum !== undefined) l.shopNum = onlyDigits(b.shopNum).slice(0, 6);
   if (b.phone !== undefined) { try { l.phone = tjPhone(b.phone); } catch { l.phone = ''; } } // старые номера (не +992) просто сбрасываем
   if (b.desc !== undefined) l.desc = str(b.desc, 1000);
+  if (b.sub !== undefined) l.sub = SUBS.includes(b.sub) ? b.sub : '';
+  if (b.a && typeof b.a === 'object') { l.a = {}; for (const k in b.a) if (ATTR[k]) l.a[k] = str(b.a[k], 30); }
   if (b.material !== undefined) l.material = str(b.material, 60); // материал товара (понятное название: «Хлопок», «Натуральная кожа» и т.п.)
   if (b.contact !== undefined) l.contact = ['chat','both','phone','wa','tg'].includes(b.contact) ? b.contact : 'chat';
   if (Array.isArray(b.photos)) l.photos = b.photos.filter(p => typeof p === 'string' && (p.startsWith('data:image/') || p.startsWith('http'))).slice(0, 16);
@@ -252,7 +291,7 @@ route('GET', '/listings', 0, (q, b, u) => {
   else if (s === 'exp') arr.sort((a,b) => (priceNum(b.price) ?? -1) - (priceNum(a.price) ?? -1));
   else if (q.seller) arr.sort((a,b) => b.createdAt - a.createdAt);
   else arr = recommend(arr, u);
-  const off = +q.offset || 0, lim = Math.min(+q.limit || 40, 100);
+  const off = +q.offset || 0, lim = Math.min(+q.limit || 40, 300);
   return { total: arr.length, items: arr.slice(off, off + lim).map(l => listingOut(l)) };
 });
 route('GET', '/listings/:id', 0, (q, b, u, r, p) => { const l = db.listings[p.id] || need(404, 'Объявление не найдено'); l.views = (l.views||0) + 1; learnListing(u, l, 'view'); touch(); return listingOut(l, true); });
@@ -270,7 +309,7 @@ route('POST', '/listings', 1, (q, b, u) => {
   return listingOut(l, true);
 });
 function own(p, u) { const l = db.listings[p.id] || need(404, 'Объявление не найдено'); if (l.sellerId !== u.id) need(403, 'Это не ваше объявление'); return l; }
-route('PUT', '/listings/:id', 1, (q, b, u, r, p) => { const l = cleanListing(b, own(p, u)); l.updatedAt = now(); l.tags = makeTags(l); touch(); return listingOut(l, true); });
+route('PUT', '/listings/:id', 1, (q, b, u, r, p) => { const l = cleanListing(b, own(p, u)); l.updatedAt = now(); l.aiAt = 0; l.tags = makeTags(l); touch(); return listingOut(l, true); });
 route('POST', '/listings/:id/archive', 1, (q, b, u, r, p) => { const l = own(p, u); l.archived = true; touch(); return listingOut(l, true); });
 route('POST', '/listings/:id/restore', 1, (q, b, u, r, p) => { const l = own(p, u); l.archived = false; l.createdAt = now(); touch(); return listingOut(l, true); });
 route('POST', '/listings/:id/rise', 1, (q, b, u, r, p) => { const l = own(p, u); l.boostedUntil = now() + 7*864e5; l.freeRiseUsed = true; touch(); return listingOut(l, true); });
@@ -384,6 +423,7 @@ route('GET', '/listings/:id/share', 0, (q, b, u, r, p) => {
 // --- Рекомендации ---
 // Явные сигналы из приложения (необязательно): {type:'hide'|'view'|'fav', listingId}
 route('POST', '/events', 1, (q, b, u) => {
+  if (b.type === 'search') { learnQuery(u, { q: str(b.q, 80) }, 'search'); return { ok:true }; }
   const l = db.listings[b.listingId] || need(404, 'Объявление не найдено');
   if (!['hide','view','fav'].includes(b.type)) need(400, 'Неизвестное событие');
   learnListing(u, l, b.type); return { ok:true };
