@@ -440,9 +440,11 @@ route('GET', '/me/interests', 1, (q, b, u) => {   // отладка: что си
 route('DELETE', '/me/interests', 1, (q, b, u) => { u.interests = {}; u.seen = []; u.hidden = []; touch(); return { ok:true }; });
 
 function send(res, code, obj) {
-  res.writeHead(code, { 'content-type':'application/json; charset=utf-8', 'access-control-allow-origin':'*',
+  res.writeHead(code, { 'content-type':'application/json; charset=utf-8', 'access-control-allow-origin':'*', 'cache-control':'no-store',
     'access-control-allow-headers':'content-type, authorization', 'access-control-allow-methods':'GET, POST, PUT, DELETE, OPTIONS' });
-  res.end(JSON.stringify(obj));
+  const body = JSON.stringify(obj), ae = (res.req && res.req.headers['accept-encoding']) || '';
+  if (body.length > 1024 && /gzip/.test(ae)) { res.setHeader('content-encoding', 'gzip'); res.setHeader('vary', 'accept-encoding'); return res.end(require('zlib').gzipSync(body, { level: 4 })); }
+  res.end(body);
 }
 http.createServer((req, res) => {
   if (req.method === 'OPTIONS') return send(res, 204, {});
