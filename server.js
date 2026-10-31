@@ -1,5 +1,13 @@
 // СтеклоМаркет — тестовый сервер. Без зависимостей, Node 20+.
 // Вход: через Telegram-бота (подтверждение номера телефона). Уведомления — тоже в Telegram.
+// Сторож: при падении сервер перезапускается сам (не ждём следующего запуска workflow)
+if (!process.env.GM_CHILD) {
+  const { spawn } = require('child_process'); let child, stop = false;
+  const run = () => { child = spawn(process.execPath, [__filename], { stdio:'inherit', env: Object.assign({}, process.env, { GM_CHILD:'1' }) });
+    child.on('exit', c => { if (stop) return process.exit(0); console.error('Сервер упал (код ' + c + '), перезапуск через 2 с'); setTimeout(run, 2000); }); };
+  ['SIGINT','SIGTERM'].forEach(s => process.on(s, () => { stop = true; if (child) child.kill(s); setTimeout(() => process.exit(0), 5000); }));
+  run(); return;
+}
 const http = require('http'), fs = require('fs'), crypto = require('crypto');
 const PORT = +process.env.PORT || 8080;
 const TOKEN = process.env.BOT_TOKEN || '';
