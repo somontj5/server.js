@@ -19,7 +19,7 @@ public class MainActivity extends Activity {
   void handle(Intent i){if(i==null)return;final String t=i.getStringExtra("tid");if(t==null)return;i.removeExtra("tid");
     w.postDelayed(new Runnable(){public void run(){w.evaluateJavascript("window.gmOpenTid&&gmOpenTid('"+t.replaceAll("[^A-Za-z0-9_\\-]","")+"')",null);}},700);}
   @Override protected void onResume(){super.onResume();visible=true;MsgService.cancelAll(this);}
-  @Override protected void onPause(){super.onPause();visible=false;}
+  @Override protected void onPause(){super.onPause();visible=false;MsgService.start(this);}
   @Override protected void onActivityResult(int rq,int rs,Intent d){
     if(rq==FC&&cb!=null){Uri[] r=null;if(rs==RESULT_OK&&d!=null){if(d.getClipData()!=null){int n=d.getClipData().getItemCount();r=new Uri[n];for(int k=0;k<n;k++)r[k]=d.getClipData().getItemAt(k).getUri();}else if(d.getData()!=null)r=new Uri[]{d.getData()};}
       cb.onReceiveValue(r);cb=null;return;}super.onActivityResult(rq,rs,d);}

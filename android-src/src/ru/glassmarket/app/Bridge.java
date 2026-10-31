@@ -7,6 +7,6 @@ public class Bridge {
   @JavascriptInterface public void setAuth(String srv,String token,String uid){
     SharedPreferences p=c.getSharedPreferences("gm",0);boolean ch=!token.equals(p.getString("token",""))||!srv.equals(p.getString("srv",""));
     p.edit().putString("srv",srv).putString("token",token).putString("uid",uid).apply();if(ch)MsgService.start(c);}
-  @JavascriptInterface public void clearAuth(){c.getSharedPreferences("gm",0).edit().remove("token").apply();c.stopService(new Intent(c,MsgService.class));}
+  @JavascriptInterface public void clearAuth(){MsgService.stop(c);}
   @JavascriptInterface public boolean notifOn(){return android.os.Build.VERSION.SDK_INT<33||c.checkSelfPermission("android.permission.POST_NOTIFICATIONS")==0;}
 }
