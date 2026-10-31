@@ -30,12 +30,16 @@ Node.js 20, без зависимостей. Вход через Telegram-бот
 | POST | /listings/:id/thread 🔒 | открыть диалог с продавцом |
 | GET | /threads 🔒 | список диалогов + `unread` |
 | GET | /threads/:id?since=ts 🔒 | сообщения (отмечает прочитанными) |
-| POST | /threads/:id/messages 🔒 | `{text}` |
+| POST | /threads/:id/messages 🔒 | `{text, img?, voice?, dur?, re?}` — фото (data:image), голосовое (data:audio), ответ на сообщение |
+| GET | /my/stats 🔒 | аналитика продавца: просмотры, избранное, диалоги по объявлениям + по дням (14 дн.) |
 | GET | /users/:id/reviews | рейтинг и отзывы |
 | POST | /users/:id/reviews 🔒 | `{stars,text}`, только после переписки |
 | GET/POST/DELETE | /searches, /searches/:id 🔒 | сохранённые поиски (`fresh` — новые) |
 | POST | /searches/:id/seen 🔒 | отметить новые просмотренными |
 | GET/PUT | /me 🔒 | профиль `{name,shopName,row,shopNum}` |
+| GET | /suggest?q= | подсказки поиска (популярные запросы + названия), пустой q — «часто ищут» |
+| PUT/DELETE | /threads/:id/messages/:mid 🔒 | изменить `{text}` (48 ч) / удалить у всех |
+| POST | /threads/:id/pin 🔒 | `{id}` закрепить, `{id:null}` открепить |
 | GET | /recs?limit=&exclude=id,id | подборка «Для вас» |
 | POST | /events 🔒 | `{type:'hide'\|'view'\|'fav', listingId}` — явный сигнал («не интересно» = hide) |
 | GET/DELETE | /me/interests 🔒 | топ интересов (отладка) / сброс рекомендаций |
