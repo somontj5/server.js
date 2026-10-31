@@ -260,7 +260,7 @@ function cleanListing(b, l) {
   if (b.cat !== undefined) l.cat = CATS.includes(b.cat) ? b.cat : 'other';
   ['name','price','shopName'].forEach(k => { if (b[k] !== undefined) l[k] = str(b[k], 80); });
   if (b.row !== undefined) l.row = onlyDigits(b.row).slice(0, 4);
-  if (b.shopNum !== undefined) l.shopNum = onlyDigits(b.shopNum).slice(0, 6);
+  if (b.shopNum !== undefined) l.shopNum = onlyDigits(b.shopNum).replace(/^0+/, '').slice(0, 4); // контейнер 1..9999
   if (b.phone !== undefined) { try { l.phone = tjPhone(b.phone); } catch { l.phone = ''; } } // старые номера (не +992) просто сбрасываем
   if (b.desc !== undefined) l.desc = str(b.desc, 1000);
   if (b.sub !== undefined) l.sub = SUBS.includes(b.sub) ? b.sub : '';
@@ -305,7 +305,7 @@ route('POST', '/auth/logout', 1, (q, b, u, req) => { delete db.sessions[req.toke
 // --- Профиль ---
 route('GET', '/me', 1, (q, b, u) => meUser(u));
 route('PUT', '/me', 1, (q, b, u) => { ['name','shopName'].forEach(k => { if (b[k] !== undefined) u[k] = str(b[k], 60); });
-  if (b.row !== undefined) u.row = onlyDigits(b.row).slice(0, 4); if (b.shopNum !== undefined) u.shopNum = onlyDigits(b.shopNum).slice(0, 6); if (b.phone !== undefined) u.phone = tjPhone(b.phone); if (b.about !== undefined) u.about = str(b.about, 200); touch(); return meUser(u); });
+  if (b.row !== undefined) u.row = onlyDigits(b.row).slice(0, 4); if (b.shopNum !== undefined) { const sn = onlyDigits(b.shopNum).replace(/^0+/, '').slice(0, 4); checkShop(sn, u.id, u.shopNum); u.shopNum = sn; } if (b.phone !== undefined) u.phone = tjPhone(b.phone); if (b.about !== undefined) u.about = str(b.about, 200); touch(); return meUser(u); });
 route('GET', '/users/:id', 0, (q, b, u, r, p) => pubUser(db.users[p.id]) || need(404, 'Нет пользователя'));
 
 // --- Объявления ---
@@ -339,21 +339,40 @@ route('GET', '/suggest', 0, (q) => {
   return { items: Object.keys(cnt).sort((a, b) => cnt[b] - cnt[a] || a.length - b.length).slice(0, 8), q: n !== raw ? n : undefined };
 });
 route('GET', '/listings/:id', 0, (q, b, u, r, p) => { const l = db.listings[p.id] || need(404, 'Объявление не найдено'); l.views = (l.views||0) + 1; bump(l, 'v'); learnListing(u, l, 'view'); touch(); return listingOut(l, true); });
+// Контейнер (магазин №): 1..9999, один номер — один продавец
+function shopOwner(num, exceptId) {
+  if (!num) return null;
+  for (const x of Object.values(db.users)) if (x.id !== exceptId && x.shopNum === num) return x;
+  for (const x of Object.values(db.listings)) if (x.sellerId !== exceptId && !x.archived && x.shopNum === num) return db.users[x.sellerId] || { id: x.sellerId };
+  return null;
+}
+function checkShop(num, uid, cur) {
+  if (!num || num === cur) return; // свой текущий номер не проверяем (старые данные)
+  const n = +num; if (!(n >= 1 && n <= 9999)) need(400, 'Номер контейнера: от 1 до 9999');
+  if (shopOwner(num, uid)) need(409, `Контейнер №${num} уже занят другим продавцом`);
+}
+function fillAddr(b, u) { // адрес продавца, указанный один раз, подставляется автоматически
+  for (const k of ['row', 'shopNum', 'shopName']) if (!String(b[k] == null ? '' : b[k]).trim() && u[k]) b[k] = u[k];
+  if (!String(b.phone || '').trim() && u.phone) b.phone = u.phone;
+}
+function saveAddr(u, l) { u.shopName = l.shopName; u.row = l.row; u.shopNum = l.shopNum; if (l.phone && !u.phone) u.phone = l.phone; }
 route('POST', '/listings', 1, (q, b, u) => {
+  fillAddr(b, u);
   const l = cleanListing(b, { id: rid(5), sellerId: u.id, createdAt: now(), views:0, contact:'chat', photos:[] });
   if (!l.name || l.name.length < 3) need(400, 'Название от 3 символов');
   if (!l.cat) need(400, 'Выберите категорию');
   if (!l.photos.length) need(400, 'Добавьте фото');
   if (!l.row || !l.shopNum || !l.shopName) need(400, 'Укажите ряд, номер и название магазина');
+  checkShop(l.shopNum, u.id, u.shopNum);
   l.tags = makeTags(l); db.listings[l.id] = l;
-  if (!u.shopName) { u.shopName = l.shopName; u.row = l.row; u.shopNum = l.shopNum; }
+  saveAddr(u, l);
   touch();
   // уведомления по сохранённым поискам
   for (const s of Object.values(db.searches)) if (s.userId !== u.id && matches(l, s)) notify(s.userId, `🔔 Новое по вашему поиску «${s.title}»:\n${l.name} — ${l.price || 'цена не указана'}\nРяд ${l.row}, магазин №${l.shopNum}`);
   return listingOut(l, true);
 });
 function own(p, u) { const l = db.listings[p.id] || need(404, 'Объявление не найдено'); if (l.sellerId !== u.id) need(403, 'Это не ваше объявление'); return l; }
-route('PUT', '/listings/:id', 1, (q, b, u, r, p) => { const l = cleanListing(b, own(p, u)); l.updatedAt = now(); l.aiAt = 0; l.tags = makeTags(l); touch(); return listingOut(l, true); });
+route('PUT', '/listings/:id', 1, (q, b, u, r, p) => { fillAddr(b, u); if (b.shopNum !== undefined) checkShop(onlyDigits(b.shopNum).replace(/^0+/, '').slice(0, 4), u.id, u.shopNum); const l = cleanListing(b, own(p, u)); saveAddr(u, l); l.updatedAt = now(); l.aiAt = 0; l.tags = makeTags(l); touch(); return listingOut(l, true); });
 route('POST', '/listings/:id/archive', 1, (q, b, u, r, p) => { const l = own(p, u); l.archived = true; touch(); return listingOut(l, true); });
 route('POST', '/listings/:id/restore', 1, (q, b, u, r, p) => { const l = own(p, u); l.archived = false; l.createdAt = now(); touch(); return listingOut(l, true); });
 route('POST', '/listings/:id/rise', 1, (q, b, u, r, p) => { const l = own(p, u); l.boostedUntil = now() + 7*864e5; l.freeRiseUsed = true; touch(); return listingOut(l, true); });
