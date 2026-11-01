@@ -226,27 +226,43 @@ function igNorm(v) { let s = String(v == null ? '' : v).trim(); const m = s.matc
   if (!s) return ''; if (!/^[a-z0-9._]{1,30}$/.test(s)) need(400, 'Instagram: латиница, цифры, точка и _ (до 30 символов)'); return s; }
 function igPub(un) { const c = IGC[un]; if (!c || now() - c.t > 12 * 3600e3) igLoad(un); const d = c && c.d; if (!d) return null;
   const o = Object.assign({}, d, { pic: d.picBuf ? '/ig/' + un + '/pic' : '' }); delete o.picBuf; delete o.picType; return o; }
+// Запросы к Instagram через https (встроенный fetch добавляет sec-fetch-* — Instagram отвечает 400)
+function igFetch(url, o = {}, n = 0) { return new Promise((res, rej) => { const rq = require('https').get(url, { headers: o.headers || {}, timeout: 8000 }, r => {
+  if (r.statusCode >= 300 && r.statusCode < 400 && r.headers.location && n < 3 && !/accounts\/login/.test(r.headers.location)) { r.resume(); return igFetch(new URL(r.headers.location, url).href, o, n + 1).then(res, rej); }
+  const ch = []; r.on('data', c => ch.push(c)); r.on('end', () => { const b = Buffer.concat(ch); res({ status: r.statusCode, ok: r.statusCode >= 200 && r.statusCode < 300, headers: { get: k => r.headers[k.toLowerCase()] || null },
+    text: async () => b.toString('utf8'), json: async () => JSON.parse(b.toString('utf8')), arrayBuffer: async () => b }); }); r.on('error', rej); });
+  rq.on('timeout', () => rq.destroy(new Error('timeout'))); rq.on('error', rej); }); }
 async function igLoad(un) {
   if (IGC[un] && IGC[un].busy) return; IGC[un] = Object.assign(IGC[un] || { t: 0, d: null }, { busy: 1 });
   const UA = 'Mozilla/5.0 (Linux; Android 13; Pixel 7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Mobile Safari/537.36';
-  let d = null;
+  let d = null, ex = null; // ex: true — аккаунт есть, false — точно нет, null — не удалось проверить
   try { // 1) JSON-эндпоинт веб-версии
-    const r = await fetch('https://i.instagram.com/api/v1/users/web_profile_info/?username=' + un, { headers: { 'x-ig-app-id': '936619743392459', 'user-agent': UA }, signal: AbortSignal.timeout(8000) });
+    let r = await igFetch('https://i.instagram.com/api/v1/users/web_profile_info/?username=' + un, { headers: { 'x-ig-app-id': '567067343352427', 'user-agent': 'Instagram 219.0.0.12.117 Android (31/12; 420dpi; 1080x2400; samsung; SM-G991B; o1s; exynos2100; en_US; 346138365)' }, signal: AbortSignal.timeout(8000) });
+    if (!r.ok && r.status !== 404) r = await igFetch('https://i.instagram.com/api/v1/users/web_profile_info/?username=' + un, { headers: { 'x-ig-app-id': '936619743392459', 'user-agent': UA }, signal: AbortSignal.timeout(8000) });
+    if (r.status === 404) ex = false;
     if (r.ok) { const u = ((await r.json()).data || {}).user; if (u) d = { name: u.full_name || '', picUrl: u.profile_pic_url_hd || u.profile_pic_url, followers: u.edge_followed_by && u.edge_followed_by.count,
       following: u.edge_follow && u.edge_follow.count, posts: u.edge_owner_to_timeline_media && u.edge_owner_to_timeline_media.count, bio: (u.biography || '').slice(0, 160), verified: !!u.is_verified, priv: !!u.is_private }; }
   } catch {}
   if (!d) try { // 2) запасной путь: og-теги страницы профиля
-    const h = await (await fetch('https://www.instagram.com/' + un + '/', { headers: { 'user-agent': 'facebookexternalhit/1.1' }, signal: AbortSignal.timeout(8000) })).text();
+    const rr = await igFetch('https://www.instagram.com/' + un + '/', { headers: { 'user-agent': 'facebookexternalhit/1.1' }, signal: AbortSignal.timeout(8000) });
+    if (rr.status === 404) ex = false; const h = await rr.text();
+    if (rr.ok && ex !== false && !h.includes('(@' + un + ')') && !h.includes('instagram.com/' + un + '/"') && /<title>\s*Instagram\s*<\/title>|Page Not Found|isn.t available/i.test(h)) ex = false;
     const og = k => { const m = h.match(new RegExp('property="og:' + k + '" content="([^"]*)"')); return m ? m[1].replace(/&amp;/g, '&').replace(/&#064;/g, '@').replace(/&quot;/g, '"') : ''; };
     const desc = og('description'), img = og('image'); const num = re => { const m = desc.match(re); if (!m) return undefined; let x = parseFloat(m[1].replace(/,/g, '')); if (/K/i.test(m[2])) x *= 1e3; if (/M/i.test(m[2])) x *= 1e6; return Math.round(x); };
     if (img || desc) d = { name: (og('title').split(/\s*\(@/)[0] || '').trim(), picUrl: img, followers: num(/([\d.,]+)([KM]?)\s+Followers/i), following: num(/([\d.,]+)([KM]?)\s+Following/i), posts: num(/([\d.,]+)([KM]?)\s+Posts/i), bio: '', verified: false, priv: false };
   } catch {}
   if (d && d.picUrl) try { // аватар храним у себя (ссылки CDN Instagram протухают)
-    const r = await fetch(d.picUrl, { headers: { 'user-agent': UA }, signal: AbortSignal.timeout(8000) });
+    const r = await igFetch(d.picUrl, { headers: { 'user-agent': UA }, signal: AbortSignal.timeout(8000) });
     if (r.ok) { const b = Buffer.from(await r.arrayBuffer()); if (b.length < 600e3) { d.picBuf = b; d.picType = r.headers.get('content-type') || 'image/jpeg'; } }
   } catch {}
-  if (d) delete d.picUrl;
-  IGC[un] = { t: now(), d: d || (IGC[un] && IGC[un].d) || null }; // при ошибке оставляем прошлые данные
+  if (!d && ex === null) try { // 3) проверка существования через embed-страницу
+    const h = await (await igFetch('https://www.instagram.com/' + un + '/embed/', { headers: { 'user-agent': UA }, signal: AbortSignal.timeout(8000) })).text();
+    if (h.includes('EmbedIsBroken')) ex = false; else if (h.includes('"username":"' + un + '"') || h.includes('/' + un + '/?utm_source=ig_embed')) ex = true;
+  } catch {}
+  if (d) { delete d.picUrl; ex = true; }
+  if (d && ex === false) d = null;
+  const prev = IGC[un] || {}; // при ошибке оставляем прошлые данные
+  IGC[un] = { t: ex === null && !d ? (prev.t || 0) : now(), d: ex === false ? null : (d || prev.d || null), ex: ex === null ? (prev.ex === undefined ? null : prev.ex) : ex };
 }
 const meUser = u => Object.assign(pubUser(u), { phone:u.phone });
 function rating(uid) { const a = db.reviews.filter(r => r.sellerId === uid); return { n:a.length, avg: a.length ? +(a.reduce((s,r)=>s+r.stars,0)/a.length).toFixed(2) : 0 }; }
@@ -340,9 +356,10 @@ route('POST', '/auth/logout', 1, (q, b, u, req) => { delete db.sessions[req.toke
 
 // --- Профиль ---
 route('GET', '/me', 1, (q, b, u) => meUser(u));
-route('PUT', '/me', 1, (q, b, u) => { ['name','shopName'].forEach(k => { if (b[k] !== undefined) u[k] = str(b[k], 60); });
+route('PUT', '/me', 1, async (q, b, u) => { if (b.ig) { const g = igNorm(b.ig); if (g && g !== u.ig) { if (!IGC[g] || IGC[g].ex == null) await igLoad(g); if (IGC[g] && IGC[g].ex === false) need(400, 'Instagram-аккаунт @' + g + ' не найден'); } }
+  ['name','shopName'].forEach(k => { if (b[k] !== undefined) u[k] = str(b[k], 60); });
   if (b.row !== undefined) u.row = onlyDigits(b.row).slice(0, 4); if (b.shopNum !== undefined) { const sn = onlyDigits(b.shopNum).replace(/^0+/, '').slice(0, 4); checkShop(sn, u.id, u.shopNum); u.shopNum = sn; } if (b.phone !== undefined) u.phone = tjPhone(b.phone); if (b.about !== undefined) u.about = str(b.about, 200); if (b.ig !== undefined) { u.ig = igNorm(b.ig); if (u.ig) igLoad(u.ig); } if (b.avatar !== undefined) { if (!b.avatar) { delete u.avatar; } else { if (!/^data:image\/(jpeg|png|webp);base64,/.test(b.avatar) || b.avatar.length > 400e3) need(400, 'Фото слишком большое'); u.avatar = b.avatar; u.avTs = now(); } } touch(); return meUser(u); });
-route('GET', '/ig/:name', 0, async (q, b, u, r, p) => { const un = igNorm(p.name); if (!un) need(400, 'Пустой ник'); if (!IGC[un] || !IGC[un].d) await igLoad(un); return { ig: un, igInfo: igPub(un) }; });
+route('GET', '/ig/:name', 0, async (q, b, u, r, p) => { const un = igNorm(p.name); if (!un) need(400, 'Пустой ник'); if (!IGC[un] || !IGC[un].d) await igLoad(un); return { ig: un, exists: IGC[un] ? (IGC[un].ex === undefined ? null : IGC[un].ex) : null, igInfo: igPub(un) }; });
 route('GET', '/users/:id', 0, (q, b, u, r, p) => pubUser(db.users[p.id]) || need(404, 'Нет пользователя'));
 
 // --- Объявления ---
