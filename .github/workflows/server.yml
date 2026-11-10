@@ -59,6 +59,7 @@ jobs:
         env:
           BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          GEMINI_MODEL: gemini-3.1-flash-lite
           PUBLIC_URL: ${{ env.PUBLIC_URL }}
         run: timeout -s TERM 350m node server.js || true
 

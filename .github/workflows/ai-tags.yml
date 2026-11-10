@@ -1,0 +1,53 @@
+name: AI tags (слой 3)
+# Бесплатный тариф Gemini: разметка объявлений, где остались неизвестные слова.
+# Запускается после публикации сервера (workflow server.yml) и по расписанию.
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '0 3 * * *'      # раз в сутки, ночью
+  workflow_run:
+    workflows: ["server"]    # после публикации сервера
+    types: [completed]
+permissions:
+  contents: write
+concurrency:
+  group: ai-tags
+  cancel-in-progress: false
+jobs:
+  ai:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '20' }
+      - name: Restore data
+        uses: actions/cache@v4
+        with:
+          path: data
+          key: gm-data-${{ github.run_id }}
+          restore-keys: gm-data-
+      - name: Разметка (только разрешённые теги)
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          AI_LIMIT: '40'
+          AI_MODEL: gemini-3.1-flash-lite
+          AI_FALLBACK: gemini-3.5-flash-lite
+        run: node ai-worker.js
+      - name: Save data
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: data
+          key: gm-data-${{ github.run_id }}
+      - name: Неизвестные слова (для словаря)
+        run: |
+          node -e "const d=require('./data/db.json');const u=d.unknown||{};const a=Object.entries(u).sort((x,y)=>y[1].c-x[1].c).slice(0,100);require('fs').writeFileSync('unknown-words.txt', a.map(x=>x[1].c+' × '+x[0]).join('\n'));console.log(a.slice(0,30).map(x=>x[1].c+' × '+x[0]).join('\n'))"
+      - name: Коммит счётчиков и результата
+        if: always()
+        run: |
+          git config user.name 'glassmarket-bot'
+          git config user.email 'bot@users.noreply.github.com'
+          git add data/ai-tags.json data/db.json unknown-words.txt 2>/dev/null || true
+          git commit -m "ai-tags: автотеги слоя 3 (неизвестные слова со счётчиком)" || echo "нет изменений"
+          git push || echo "нечего пушить"
