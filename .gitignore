@@ -4,3 +4,7 @@ cf.log
 
 gm_key.pem
 *.key
+
+.local-build/
+*.jks
+*.keystore
