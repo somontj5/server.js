@@ -92,7 +92,7 @@ async function sendCard(chat, id) {
   const l = db.listings[id];
   if (!l || l.archived) return say(chat, '😔 Объявление снято с публикации или удалено.');
   const s = db.users[l.sellerId] || {}, ph = l.contact && l.contact !== 'chat' ? (l.phone || s.phone || '') : '';
-  const cap = `${l.name}\n💰 ${l.price || 'цена не указана'}\n📍 Ряд ${l.row}, магазин №${l.shopNum} (${l.shopName})` + (ph ? `\n📞 ${ph}` : '') + (l.desc ? `\n\n${l.desc.slice(0, 600)}` : '') + '\n\nНаписать продавцу можно в приложении СтеклоМаркет.';
+  const cap = `${l.name}\n💰 ${l.price || 'цена не указана'}\n📍 ${l.bazaar ? 'Базар ' + l.bazaar + ', ' : ''}Ряд ${l.row}, магазин №${l.shopNum} (${l.shopName})` + (ph ? `\n📞 ${ph}` : '') + (l.desc ? `\n\n${l.desc.slice(0, 600)}` : '') + '\n\nНаписать продавцу можно в приложении СтеклоМаркет.';
   const p = l.photos[0];
   try {
     if (p && p.startsWith('http')) { const r = await tg('sendPhoto', { chat_id: chat, photo: p, caption: cap.slice(0, 1024) }); if (r.ok) return; }
@@ -132,7 +132,9 @@ const SYN = {
 };
 const W2S = []; for (const k in SYN) for (const r of SYN[k].split(' ')) W2S.push([r, k]);
 const subOf = w => { for (const [r, k] of W2S) if (w.startsWith(r) || (w.length >= 5 && r.startsWith(w))) return k; return null; };
-const ATTR = { gender:1, color:1, season:1, size:1, mat:1, style:1, cond:1 };
+const ATTR = { gender:1, color:1, season:1, size:1, mat:1, style:1, cond:1, made:1 }; // made — страна производства
+const BAZAARS = ['Саховат', 'Атуш', 'Сомон'], MADE = ['Китай', 'Узбекистан', 'Турция'];
+const bazOf = v => BAZAARS.includes(String(v || '').trim()) ? String(v).trim() : '';
 function priceTag(p) { const n = priceNum(p); if (n == null) return null; return 'p:' + (n < 500 ? 0 : n < 2000 ? 1 : n < 10000 ? 2 : n < 50000 ? 3 : 4); }
 function makeTags(l) {
   const t = new Set(['c:' + l.cat]);
@@ -148,6 +150,7 @@ function makeTags(l) {
   const pt = priceTag(l.price); if (pt) t.add(pt);
   if (l.sellerId) t.add('s:' + l.sellerId);
   if (l.row) t.add('r:' + String(l.row).toLowerCase());
+  if (l.bazaar) t.add('w:' + l.bazaar.toLowerCase());
   return [...t].slice(0, 60);
 }
 const HALF = 7 * 864e5, W = { view:1, fav:4, unfav:-3, chat:6, search:2, saved:3, hide:-8 };
@@ -219,7 +222,7 @@ setInterval(() => { if (GKEY) { const l = Object.values(db.listings).find(x => !
 for (const l of Object.values(db.listings)) { l.tags = makeTags(l); touch(); }   // пересчёт при старте (новые правила тегов)
 
 /* ================= Представления ================= */
-const pubUser = u => u && ({ id:u.id, name:u.name, shopName:u.shopName, row:u.row, shopNum:u.shopNum, about:u.about||'', rating: rating(u.id), ig: u.ig || '', igInfo: u.ig ? igPub(u.ig) : null, avatar: u.avatar ? '/u/' + u.id + '/avatar?v=' + (u.avTs || 0) : '' });
+const pubUser = u => u && ({ id:u.id, name:u.name, shopName:u.shopName, bazaar:u.bazaar||'', row:u.row, shopNum:u.shopNum, about:u.about||'', rating: rating(u.id), ig: u.ig || '', igInfo: u.ig ? igPub(u.ig) : null, avatar: u.avatar ? '/u/' + u.id + '/avatar?v=' + (u.avTs || 0) : '' });
 // ===== Instagram: плашка аккаунта продавца (публичные данные профиля, кэш 12 ч) =====
 const IGC = {}; // username -> { t, d:{ name, pic, followers, following, posts, bio, verified, priv } | null }
 function igNorm(v) { let s = String(v == null ? '' : v).trim(); const m = s.match(/instagram\.com\/([A-Za-z0-9._]+)/i); if (m) s = m[1]; s = s.replace(/^@+/, '').toLowerCase();
@@ -311,12 +314,13 @@ function cleanListing(b, l) {
   l = l || {};
   if (b.cat !== undefined) l.cat = CATS.includes(b.cat) ? b.cat : 'other';
   ['name','price','shopName'].forEach(k => { if (b[k] !== undefined) l[k] = str(b[k], 80); });
+  if (b.bazaar !== undefined) l.bazaar = bazOf(b.bazaar);
   if (b.row !== undefined) l.row = onlyDigits(b.row).slice(0, 4);
   if (b.shopNum !== undefined) l.shopNum = onlyDigits(b.shopNum).replace(/^0+/, '').slice(0, 4); // контейнер 1..9999
   if (b.phone !== undefined) { try { l.phone = tjPhone(b.phone); } catch { l.phone = ''; } } // старые номера (не +992) просто сбрасываем
   if (b.desc !== undefined) l.desc = str(b.desc, 1000);
   if (b.sub !== undefined) l.sub = SUBS.includes(b.sub) ? b.sub : '';
-  if (b.a && typeof b.a === 'object') { l.a = {}; for (const k in b.a) if (ATTR[k]) l.a[k] = str(b.a[k], 30); }
+  if (b.a && typeof b.a === 'object') { l.a = {}; for (const k in b.a) if (ATTR[k]) l.a[k] = str(b.a[k], 30); if (l.a.made && !MADE.includes(l.a.made)) delete l.a.made; }
   if (b.material !== undefined) l.material = str(b.material, 60); // материал товара (понятное название: «Хлопок», «Натуральная кожа» и т.п.)
   if (b.contact !== undefined) l.contact = ['chat','both','phone','wa','tg'].includes(b.contact) ? b.contact : 'chat';
   if (Array.isArray(b.photos)) l.photos = b.photos.filter(p => typeof p === 'string' && (p.startsWith('data:image/') || p.startsWith('http'))).slice(0, 16);
@@ -358,6 +362,7 @@ route('POST', '/auth/logout', 1, (q, b, u, req) => { delete db.sessions[req.toke
 route('GET', '/me', 1, (q, b, u) => meUser(u));
 route('PUT', '/me', 1, async (q, b, u) => { if (b.ig) { const g = igNorm(b.ig); if (g && g !== u.ig) { if (!IGC[g] || IGC[g].ex == null) await igLoad(g); if (IGC[g] && IGC[g].ex === false) need(400, 'Instagram-аккаунт @' + g + ' не найден'); } }
   ['name','shopName'].forEach(k => { if (b[k] !== undefined) u[k] = str(b[k], 60); });
+  if (b.bazaar !== undefined) u.bazaar = bazOf(b.bazaar);
   if (b.row !== undefined) u.row = onlyDigits(b.row).slice(0, 4); if (b.shopNum !== undefined) { const sn = onlyDigits(b.shopNum).replace(/^0+/, '').slice(0, 4); checkShop(sn, u.id, u.shopNum); u.shopNum = sn; } if (b.phone !== undefined) u.phone = tjPhone(b.phone); if (b.about !== undefined) u.about = str(b.about, 200); if (b.ig !== undefined) { u.ig = igNorm(b.ig); if (u.ig) igLoad(u.ig); } if (b.avatar !== undefined) { if (!b.avatar) { delete u.avatar; } else { if (!/^data:image\/(jpeg|png|webp);base64,/.test(b.avatar) || b.avatar.length > 400e3) need(400, 'Фото слишком большое'); u.avatar = b.avatar; u.avTs = now(); } } touch(); return meUser(u); });
 route('GET', '/ig/:name', 0, async (q, b, u, r, p) => { const un = igNorm(p.name); if (!un) need(400, 'Пустой ник'); if (!IGC[un] || !IGC[un].d) await igLoad(un); return { ig: un, exists: IGC[un] ? (IGC[un].ex === undefined ? null : IGC[un].ex) : null, igInfo: igPub(un) }; });
 route('GET', '/users/:id', 0, (q, b, u, r, p) => pubUser(db.users[p.id]) || need(404, 'Нет пользователя'));
@@ -406,10 +411,10 @@ function checkShop(num, uid, cur) {
   if (shopOwner(num, uid)) need(409, `Контейнер №${num} уже занят другим продавцом`);
 }
 function fillAddr(b, u) { // адрес продавца, указанный один раз, подставляется автоматически
-  for (const k of ['row', 'shopNum', 'shopName']) if (!String(b[k] == null ? '' : b[k]).trim() && u[k]) b[k] = u[k];
+  for (const k of ['bazaar', 'row', 'shopNum', 'shopName']) if (!String(b[k] == null ? '' : b[k]).trim() && u[k]) b[k] = u[k];
   if (!String(b.phone || '').trim() && u.phone) b.phone = u.phone;
 }
-function saveAddr(u, l) { u.shopName = l.shopName; u.row = l.row; u.shopNum = l.shopNum; if (l.phone && !u.phone) u.phone = l.phone; }
+function saveAddr(u, l) { u.shopName = l.shopName; u.bazaar = l.bazaar || ''; u.row = l.row; u.shopNum = l.shopNum; if (l.phone && !u.phone) u.phone = l.phone; }
 route('POST', '/listings', 1, (q, b, u) => {
   fillAddr(b, u);
   const l = cleanListing(b, { id: rid(5), sellerId: u.id, createdAt: now(), views:0, contact:'chat', photos:[] });
@@ -569,7 +574,7 @@ route('DELETE', '/searches/:id', 1, (q, b, u, r, p) => { const s = db.searches[p
 route('GET', '/listings/:id/share', 0, (q, b, u, r, p) => {
   const l = db.listings[p.id] || need(404, 'Объявление не найдено');
   const url = shareUrl(l.id);
-  return { url, text: `${l.name} — ${l.price || 'цена не указана'}\nРяд ${l.row}, магазин №${l.shopNum} (${l.shopName})` + (url ? `\n${url}` : '') };
+  return { url, text: `${l.name} — ${l.price || 'цена не указана'}\n${l.bazaar ? 'Базар ' + l.bazaar + ', ' : ''}Ряд ${l.row}, магазин №${l.shopNum} (${l.shopName})` + (url ? `\n${url}` : '') };
 });
 
 // --- Рекомендации ---
@@ -609,7 +614,7 @@ http.createServer((req, res) => {
     const l = db.listings[lm[1]], esc = v => String(v || '').replace(/[&<>"]/g, c => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;' })[c]);
     const tgl = l && BOT ? `https://t.me/${BOT}?start=l_${l.id}` : '';
     const html = l && !l.archived ? `<!doctype html><meta charset=utf-8><meta name=viewport content="width=device-width,initial-scale=1"><title>${esc(l.name)}</title><meta property="og:title" content="${esc(l.name + ' — ' + (l.price||''))}"><meta property="og:description" content="${esc('Ряд ' + l.row + ', магазин №' + l.shopNum)}">
-<body style="font-family:sans-serif;max-width:520px;margin:auto;padding:12px">${l.photos[0] ? `<img src="/l/${esc(l.id)}/photo" style="width:100%;border-radius:12px">` : ''}<h2>${esc(l.name)}</h2><h3>${esc(l.price || 'цена не указана')}</h3><p>📍 Ряд ${esc(l.row)}, магазин №${esc(l.shopNum)} (${esc(l.shopName)})</p>${l.material ? `<p>🧵 Материал: ${esc(l.material)}</p>` : ''}<p style="white-space:pre-wrap">${esc(l.desc)}</p>${tgl ? `<a href="${tgl}" style="display:block;text-align:center;background:#2aabee;color:#fff;padding:14px;border-radius:12px;text-decoration:none">Открыть в Telegram</a>` : ''}</body>`
+<body style="font-family:sans-serif;max-width:520px;margin:auto;padding:12px">${l.photos[0] ? `<img src="/l/${esc(l.id)}/photo" style="width:100%;border-radius:12px">` : ''}<h2>${esc(l.name)}</h2><h3>${esc(l.price || 'цена не указана')}</h3><p>📍 ${l.bazaar ? 'Базар ' + esc(l.bazaar) + ', ' : ''}Ряд ${esc(l.row)}, магазин №${esc(l.shopNum)} (${esc(l.shopName)})</p>${l.material ? `<p>🧵 Материал: ${esc(l.material)}</p>` : ''}<p style="white-space:pre-wrap">${esc(l.desc)}</p>${tgl ? `<a href="${tgl}" style="display:block;text-align:center;background:#2aabee;color:#fff;padding:14px;border-radius:12px;text-decoration:none">Открыть в Telegram</a>` : ''}</body>`
       : '<!doctype html><meta charset=utf-8><h3 style="font-family:sans-serif">Объявление снято с публикации</h3>';
     res.writeHead(l ? 200 : 404, { 'content-type': 'text/html; charset=utf-8' }); return res.end(html);
   }
