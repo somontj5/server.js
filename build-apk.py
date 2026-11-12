@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Repackage unchanged native 9.8 shell with versioned WebView source; sign using official apksigner.
+"""Repackage unchanged native shell with versioned WebView source; sign using official apksigner.
 Usage: python3 build-apk.py --signer JAR --keystore JKS --password-file FILE
 Native classes.dex/resources are intentionally retained; no Android SDK downloads required.
 """
@@ -78,7 +78,7 @@ def main():
     parser.add_argument('--signer', required=True)
     parser.add_argument('--keystore', required=True)
     parser.add_argument('--password-file', required=True)
-    parser.add_argument('--base', default='apk/GlassMarket9.8.apk')
+    parser.add_argument('--base', default='apk/GlassMarket9.10.apk')
     parser.add_argument('--out', default='apk/GlassMarket9.11.apk')
     args = parser.parse_args()
     source = inside('android-src/assets/www/index.html')
@@ -89,7 +89,7 @@ def main():
     temporary.parent.mkdir(exist_ok=True)
     with zipfile.ZipFile(inside(args.base)) as original, zipfile.ZipFile(temporary, 'w') as target:
         for entry in original.infolist():
-            if entry.filename.upper().startswith('META-INF/'):
+            if entry.filename.upper().startswith('META-INF/') or entry.filename.startswith('assets/www/'):
                 continue
             content = original.read(entry)
             if entry.filename == 'assets/www/index.html':
@@ -104,7 +104,10 @@ def main():
                 padding = -(target.fp.tell() + 30 + len(entry.filename.encode())) % 4
                 info.extra = struct.pack('<HH', 0xd935, padding) + b'\0' * padding
             target.writestr(info, content)
-        target.write(inside('android-src/assets/www/categories.js'), 'assets/www/categories.js', compress_type=zipfile.ZIP_DEFLATED)
+        for asset in inside('android-src/assets/www').rglob('*'):
+            if asset.is_file():
+                name = 'assets/www/' + asset.relative_to(inside('android-src/assets/www')).as_posix()
+                target.write(asset, name, compress_type=zipfile.ZIP_DEFLATED)
     signer = ['java', '-jar', str(inside(args.signer))]
     subprocess.run(signer + ['sign', '--ks', str(inside(args.keystore)), '--ks-key-alias', 'glassmarket-release',
                             '--ks-pass', 'file:' + str(inside(args.password_file)),
@@ -113,7 +116,11 @@ def main():
     subprocess.run(signer + ['verify', '--verbose', '--print-certs', str(output)], check=True)
     with zipfile.ZipFile(output) as built, zipfile.ZipFile(inside(args.base)) as original:
         assert built.read('classes.dex') == original.read('classes.dex'), 'Unexpected native shell change'
-        assert built.read('assets/www/index.html') == source.read_bytes(), 'Client source mismatch'
+        assert len(built.namelist()) == len(set(built.namelist())), 'Duplicate APK entries'
+        for asset in inside('android-src/assets/www').rglob('*'):
+            if asset.is_file():
+                name = 'assets/www/' + asset.relative_to(inside('android-src/assets/www')).as_posix()
+                assert built.read(name) == asset.read_bytes(), 'Client asset mismatch: ' + name
     print(f'Built {output.name}; version {version} ({code}); native shell retained and signatures verified')
 
 if __name__ == '__main__':

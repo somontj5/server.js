@@ -3,7 +3,7 @@ const { chromium } = require('./.local-build/node_modules/playwright');
 const fs = require('fs');
 const assert = require('assert/strict');
 (async () => {
-  const browser = await chromium.launch({headless:true,args:['--no-sandbox']});
+  const browser = await chromium.launch({headless:true,executablePath:process.env.CHROME_PATH||'/usr/bin/google-chrome',args:['--no-sandbox']});
   try {
     const context = await browser.newContext({viewport:{width:320,height:700}});
     const page = await context.newPage(), errors = [];
@@ -17,7 +17,7 @@ const assert = require('assert/strict');
         return route.fulfill({status:response.status,contentType:'application/json',body:await response.text()});
       }
       if (url.hostname === 'gm.test') {
-        const file = url.pathname === '/categories.js' ? 'categories.js' : 'index.html';
+        const file = ['categories.js','sizes.js','sizes-ui.js'].find(x=>url.pathname==='/'+x)||'index.html';
         return route.fulfill({contentType:file.endsWith('.js')?'application/javascript':'text/html',body:fs.readFileSync('android-src/assets/www/'+file)});
       }
       if (/github/.test(url.hostname)) return route.fulfill({contentType:'text/plain',body:'https://gm.test/api'});
@@ -35,6 +35,7 @@ const assert = require('assert/strict');
     await page.waitForSelector('#subcats [data-section="suits-two"]');
     assert.equal(await page.locator('#subcats button').count(),7);
     await page.click('[data-section="suits-two"]');
+    await page.waitForTimeout(300);
     assert.equal(await page.locator('#grid .card').count(),2);
     await page.click('#grid .card[data-id="base"]');
     await page.waitForSelector('#sim .card');
@@ -73,6 +74,51 @@ const assert = require('assert/strict');
     await page.click('[data-cat="shoes"]');
     assert.equal(await page.evaluate(()=>F.section),'');
     assert.equal(await page.locator('[data-leaf]').count(),7);
+    // New size systems: children are independent from gender; ranges are typed.
+    await page.click('[data-attr="ageGroup"][data-v="Детское"]');
+    assert.equal(await page.locator('[data-size-system="shoe"]').count(),20);
+    await page.click('[data-size-value="17"]');
+    await page.click('[data-size-action="range"]');
+    await page.click('[data-size-value="20"]');
+    await page.click('[data-size-value="23"]');
+    assert.deepEqual(await page.evaluate(()=>F.sizes.entries[0].values),['17','20','21','22','23']);
+    await page.click('[data-attr="ageGroup"][data-v="Взрослое"]');
+    await page.click('[data-attr="gender"][data-v="Женское"]');
+    assert.equal(await page.locator('[data-size-system="shoe"]').count(),8);
+    await page.click('[data-cat="dress"]');await page.click('[data-leaf="dress-dresses"]');
+    await page.click('[data-size-system="number"][data-size-value="48"]');
+    await page.click('[data-size-system="letter"][data-size-value="M"]');
+    assert.equal(await page.evaluate(()=>F.sizes.entries.length),2);
+    await page.click('[data-size-action="clear"]');
+    assert.equal(await page.evaluate(()=>GMSizes.has(F.sizes)),false);
+    await page.click('[data-size-action="standard"]');
+    await page.selectOption('[data-size-range="from"]','46');
+    await page.selectOption('[data-size-range="to"]','52');
+    assert.deepEqual(await page.evaluate(()=>F.sizes.standardRange),{system:'number',from:'46',to:'52'});
+    await page.selectOption('[data-size-range="system"]','letter');
+    await page.selectOption('[data-size-range="from"]','S');
+    await page.selectOption('[data-size-range="to"]','XL');
+    assert.deepEqual(await page.evaluate(()=>F.sizes.standardRange),{system:'letter',from:'S',to:'XL'});
+    await page.click('[data-cat="bags"]');
+    assert.equal(await page.locator('#f-a_size').count(),0);
+    await page.evaluate(()=>{$('sellPg').hidden=true;location.hash='home';});
+    await page.waitForTimeout(200);
+    await page.click('#btnFilter');
+    await page.waitForSelector('[data-fc="dress"]');await page.click('[data-fc="dress"]');
+    await page.click('[data-fsection="dress-dresses"]');
+    await page.click('[data-size-system="number"][data-size-value="48"]');
+    await page.click('#fok');
+    await page.waitForTimeout(500);
+    const sizeIds=await page.locator('#grid .card').evaluateAll(es=>es.map(e=>e.dataset.id));
+    assert.ok(sizeIds.includes('size-exact'));assert.ok(sizeIds.includes('size-bounded'));
+    assert.equal(sizeIds.at(-1),'size-unknown');assert.ok(!sizeIds.includes('size-letters'));
+    assert.equal(await page.locator('#grid .card').last().getByText('Размер уточняйте').count(),1);
+    await page.click('#btnFilter');await page.waitForSelector('[data-size-value="50"]');
+    await page.click('[data-size-system="number"][data-size-value="50"]');
+    await page.click('[data-close]');await page.waitForTimeout(100);
+    assert.deepEqual(await page.evaluate(()=>S.f.sizeSpec.entries[0].values),['48']);
+    for(const width of [320,360,390]){await page.setViewportSize({width,height:700});await page.waitForTimeout(150);const overflow=await page.evaluate(()=>({width:innerWidth,scroll:document.documentElement.scrollWidth,items:Array.from(document.querySelectorAll('body *')).filter(e=>{var r=e.getBoundingClientRect();return r.width&&r.right>innerWidth+1}).slice(0,15).map(e=>({tag:e.tagName,cls:e.className,id:e.id,right:e.getBoundingClientRect().right}))}));assert.ok(overflow.scroll<=width,JSON.stringify(overflow))}
+    await page.screenshot({path:'.local-build/size-search.png',fullPage:true});
     await page.emulateMedia({reducedMotion:'reduce'});
     assert.equal(await page.locator('#f-section').evaluate(e=>getComputedStyle(e).animationName),'none');
     assert.deepEqual(errors,[]);
