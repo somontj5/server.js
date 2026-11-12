@@ -740,6 +740,7 @@ function renderCats(){
 }
 function filtersCount(){return Object.keys(S.f).filter(function(k){return S.f[k]}).length+(S.cat!=='all'?1:0)+(S.sort!=='rec'?1:0)+((S.pmin||S.pmax)?1:0)}
 function renderGrid(){
+  drawSubcats();
   var arr=visible(),fc=filtersCount(),active=fc||S.q.trim();
   $('fDot').hidden=!fc;
   var ch=[];
@@ -748,8 +749,8 @@ function renderGrid(){
   if(S.pmin||S.pmax)ch.push('<button class="chip on" data-rm="price">'+(S.pmin?'от '+fmtNum(S.pmin)+' ':'')+(S.pmax?'до '+fmtNum(S.pmax)+' ':'')+'₽'+ic('x')+'</button>');
   if(S.sort!=='rec')ch.push('<button class="chip on" data-rm="sort">'+{new:'Сначала новые',cheap:'Дешевле',exp:'Дороже'}[S.sort]+ic('x')+'</button>');
   $('fchips').innerHTML=ch.join('');$('fchips').hidden=!ch.length;
-  $('cats').hidden=!!active;
-  $('gTitle').textContent=active?(S.cat!=='all'&&!S.q.trim()?cat(S.cat).n:'Результаты'):'Рекомендации';
+  $('cats').hidden=!!S.q.trim();
+  $('gTitle').textContent=active?(S.cat!=='all'&&!S.q.trim()?(S.section?GMCatalog.leaf(S.section).n:cat(S.cat).n):'Результаты'):'Рекомендации';
   if(S.note)$('gTitle').textContent=S.note;
   $('gCount').textContent=arr.length?plural(arr.length,'объявление','объявления','объявлений'):'';
   var html;
@@ -760,7 +761,13 @@ function renderGrid(){
   else html=emptyBox('search','Ничего не нашлось','Попробуйте изменить запрос или сбросить фильтры','<button class="btn b-gray" id="resetAll">Сбросить фильтры</button>');
   setH($('grid'),html);renderCats();
 }
-function resetFilters(){S.cat='all';S.f={};S.sort='rec';S.pmin='';S.pmax='';S.q='';$('q').value='';$('qClr').hidden=true;renderGrid()}
+function subButtons(parent,selected,attr,all){
+ var c=GMCatalog.group(parent);if(!c||!c.children.length)return '';
+ return (all?'<button class="chip'+(!selected?' on':'')+'" '+attr+'="">Все</button>':'')+c.children.map(function(x){return '<button class="chip'+(selected===x.id?' on':'')+'" '+attr+'="'+x.id+'">'+esc(x.n)+'</button>'}).join('');
+}
+function drawSubcats(){var el=$('subcats'),h=subButtons(S.cat,S.section,'data-section',true);el.hidden=!h;setH(el,h)}
+$('subcats').onclick=function(e){var b=e.target.closest('[data-section]');if(b){S.section=b.dataset.section;renderGrid()}};
+function resetFilters(){S.section='';S.cat='all';S.f={};S.sort='rec';S.pmin='';S.pmax='';S.q='';$('q').value='';$('qClr').hidden=true;renderGrid()}
 function gridClick(e){
   var f=e.target.closest('[data-fav]');if(f){e.stopPropagation();toggleFav(f.dataset.fav);return}
   if(e.target.closest('#resetAll')){resetFilters();return}
@@ -773,7 +780,7 @@ function toggleFav(id){
 }
 function refresh(){renderGrid();if(S.view==='fav')renderFav();if(S.view==='my')renderMy();if(S.view==='profile')renderProfile();if(S.view==='msg')renderChats();updNb();var it=$('itemPg');if(!it.hidden&&it.dataset.id)renderItem(it.dataset.id,true)}
 $('grid').addEventListener('click',gridClick);
-$('cats').addEventListener('click',function(e){var c=e.target.closest('[data-c]');if(!c)return;S.cat=S.cat===c.dataset.c?'all':c.dataset.c;renderGrid();window.scrollTo(0,0)});
+$('cats').addEventListener('click',function(e){var c=e.target.closest('[data-c]');if(!c)return;S.cat=S.cat===c.dataset.c?'all':c.dataset.c;S.section='';renderGrid();window.scrollTo(0,0)});
 $('fchips').addEventListener('click',function(e){var c=e.target.closest('[data-rm]');if(!c)return;var r=c.dataset.rm;if(r==='cat')S.cat='all';if(r==='price'){S.pmin='';S.pmax=''}if(r==='sort')S.sort='rec';if(r.indexOf('a_')===0)delete S.f[r.slice(2)];renderGrid()});
 window.addEventListener('scroll',function(){$('homeHead').classList.toggle('sh',window.scrollY>4)},{passive:true});
 
@@ -809,7 +816,7 @@ $('hist').addEventListener('mousedown',function(e){e.preventDefault();
 /* ===================== фильтры ===================== */
 var ft;
 $('btnFilter').onclick=function(){location.hash='filter'};
-function openFilter(){ft={cat:S.cat,sort:S.sort,pmin:S.pmin,pmax:S.pmax,f:Object.assign({},S.f)};drawFilter();showModal()}
+function openFilter(){ft={section:S.section,cat:S.cat,sort:S.sort,pmin:S.pmin,pmax:S.pmax,f:Object.assign({},S.f)};drawFilter();showModal()}
 function ftCount(){var s={cat:S.cat,sort:S.sort,pmin:S.pmin,pmax:S.pmax,f:S.f};S.cat=ft.cat;S.pmin=ft.pmin;S.pmax=ft.pmax;S.f=ft.f;var n=visible().length;S.cat=s.cat;S.pmin=s.pmin;S.pmax=s.pmax;S.f=s.f;return n}
 function drawFilter(){
   var sorts=[['rec','По умолчанию'],['new','Сначала новые'],['cheap','Дешевле'],['exp','Дороже']];
@@ -817,6 +824,7 @@ function drawFilter(){
    +'<div class="flab">Категория</div><div class="wchips"><button class="chip'+(ft.cat==='all'?' on':'')+'" data-fc="all">Все</button>'
    +CATS.map(function(c){return '<button class="chip'+(ft.cat===c.id?' on':'')+'" data-fc="'+c.id+'">'+c.n+'</button>'}).join('')+'</div>'
    +ATTRS.map(function(a){var o=attrOpts(a,ft.cat==='all'?'':ft.cat,ft.f.gender);return '<div class="flab">'+a.n+'</div><div class="wchips">'+o.map(function(v){return '<button class="chip'+(ft.f[a.k]===v?' on':'')+'" data-fa="'+a.k+'" data-v="'+esc(v)+'">'+esc(v)+'</button>'}).join('')+'</div>'}).join('')
+   +'<div class="units" id="filterSub">'+subButtons(ft.cat,ft.section,'data-fsection',true)+'</div>'
    +'<div class="flab">Цена, ₽</div><div class="row2"><div><input class="inp" id="fmin" inputmode="numeric" placeholder="от" value="'+esc(ft.pmin)+'"></div><div><input class="inp" id="fmax" inputmode="numeric" placeholder="до" value="'+esc(ft.pmax)+'"></div></div>'
    +'<div class="flab">Сортировка</div>'+sorts.map(function(s){return '<button class="radio'+(ft.sort===s[0]?' on':'')+'" data-fs="'+s[0]+'">'+s[1]+'<span class="rd"></span></button>'}).join('')
    +'<div class="sfoot"><button class="btn b-gray" id="fclr">Сбросить</button><button class="btn b-blue" id="fok">Показать '+ftCount()+'</button></div>';
@@ -826,7 +834,7 @@ function drawFilter(){
     var c=e.target.closest('[data-fc]');if(c){upd();ft.cat=c.dataset.fc;ft.f.size='';drawFilter();return}
     var s=e.target.closest('[data-fs]');if(s){upd();ft.sort=s.dataset.fs;drawFilter();return}
     var fa=e.target.closest('[data-fa]');if(fa){upd();var k=fa.dataset.fa;ft.f[k]=ft.f[k]===fa.dataset.v?'':fa.dataset.v;if(k==='gender')ft.f.size='';drawFilter();return}
-    if(e.target.closest('#fclr')){ft={cat:'all',sort:'rec',pmin:'',pmax:'',f:{}};drawFilter();return}
+    if(e.target.closest('#fclr')){ft={section:'',cat:'all',sort:'rec',pmin:'',pmax:'',f:{}};drawFilter();return}
     if(e.target.closest('#fok')){upd();S.cat=ft.cat;S.sort=ft.sort;S.pmin=ft.pmin;S.pmax=ft.pmax;S.f=ft.f;history.back();setTimeout(function(){renderGrid();window.scrollTo(0,0)},30);return}
     if(e.target.closest('[data-close]'))history.back();
   };
