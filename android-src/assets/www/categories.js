@@ -9,7 +9,7 @@ function normalize(l){
  var sub=group(l.sub)?l.sub:(group(l.cat)?l.cat:'other'),section=valid(sub,l.section)?l.section:'';
  var text=String(l.name||'')+' '+String(l.desc||'');text=text.toLowerCase().replace(/ё/g,'е');
  // Only confident legacy migrations: atlas dresses and newly separated headwear.
- if(!section&&((sub==='dress'&&/атлас|атласн|адрас|чакан/.test(text))||/плать[а-я]*[ -]+атлас|атлас[а-я]*[ -]+плать/.test(text))){sub='national';section='national-atlas'}
+ if((sub==='dress'&&/атлас|адрас|чакан/.test(text))||(!section&&/плать[а-я]*[ -]+атлас|атлас[а-я]*[ -]+плать/.test(text))){sub='national';section='national-atlas'}
  if(!section&&sub==='acc'){
   var rules=[['hijabs',/хиджаб/],['skullcaps',/тюбетей|токи/],['caps',/кепк|бейсболк/],['hats',/шапк/],['scarves',/платок|платки|шарф/]];
   for(var i=0;i<rules.length;i++)if(rules[i][1].test(text)){sub='headwear';section='headwear-'+rules[i][0];break}

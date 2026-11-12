@@ -235,7 +235,7 @@ const aiVersion = l => crypto.createHash('sha256').update(JSON.stringify([
 ])).digest('hex');
 let aiStatus = db.aiStatus || { state: 'not_run', processed: 0 };
 for (const l of Object.values(db.listings)) {
-  if (l.cat === 'clothes' || Catalog.group(l.cat)) { Object.assign(l, Catalog.normalize(l)); l.cat = 'clothes'; }
+  if (l.cat === 'clothes' || (Catalog.group(l.cat) && !CATS.includes(l.cat))) { Object.assign(l, Catalog.normalize(l)); l.cat = 'clothes'; }
   tagIt(l, false); touch();
 }
 // Reuse the already-authorized server workflow: no new workflow permissions required.
@@ -386,6 +386,7 @@ function cleanListing(b, l) {
   if (Array.isArray(b.photos)) l.photos = b.photos.filter(p => typeof p === 'string' && (p.startsWith('data:image/') || p.startsWith('http'))).slice(0, 16);
   if (b.tags !== undefined) l.mtags = str(b.tags, 300);   // необязательные теги продавца
   if (b.hideTags !== undefined) l.hideTags = Array.isArray(b.hideTags) ? b.hideTags.map(x => str(x, 40)).filter(Boolean).slice(0, 20) : [];
+  if (l.cat === 'clothes') Object.assign(l, Catalog.normalize(l));
   return l;
 }
 function threadOut(t, uid) {
@@ -584,7 +585,7 @@ route('POST', '/listings', 1, (q, b, u) => {
   return listingOut(l, true);
 });
 function own(p, u) { const l = db.listings[p.id] || need(404, 'Объявление не найдено'); if (l.sellerId !== u.id) need(403, 'Это не ваше объявление'); return l; }
-route('PUT', '/listings/:id', 1, (q, b, u, r, p) => { fillAddr(b, u); if (b.shopNum !== undefined) checkShop(onlyDigits(b.shopNum).replace(/^0+/, '').slice(0, 4), u.id, u.shopNum); const l = cleanListing(b, own(p, u)); saveAddr(u, l); l.updatedAt = now(); l.aiAt = 0; l.ai2 = []; delete l.aiVersion; tagIt(l); touch(); return listingOut(l, true); });
+route('PUT', '/listings/:id', 1, (q, b, u, r, p) => { fillAddr(b, u); if (b.shopNum !== undefined) checkShop(onlyDigits(b.shopNum).replace(/^0+/, '').slice(0, 4), u.id, u.shopNum); const current = own(p, u), l = cleanListing(b, { ...current }); Object.assign(current, l); saveAddr(u, l); l.updatedAt = now(); l.aiAt = 0; l.ai2 = []; delete l.aiVersion; tagIt(l); touch(); return listingOut(l, true); });
 route('POST', '/listings/:id/archive', 1, (q, b, u, r, p) => { const l = own(p, u); l.archived = true; touch(); return listingOut(l, true); });
 route('POST', '/listings/:id/restore', 1, (q, b, u, r, p) => { const l = own(p, u); l.archived = false; l.createdAt = now(); touch(); return listingOut(l, true); });
 route('POST', '/listings/:id/rise', 1, (q, b, u, r, p) => { const l = own(p, u); l.boostedUntil = now() + 7*864e5; l.freeRiseUsed = true; touch(); return listingOut(l, true); });
@@ -733,7 +734,7 @@ route('GET', '/listings/:id/share', 0, (q, b, u, r, p) => {
 // --- Рекомендации ---
 // Явные сигналы из приложения (необязательно): {type:'hide'|'view'|'fav', listingId}
 route('POST', '/events', 1, (q, b, u) => {
-  if (b.type === 'search') { learnQuery(u, { q: str(b.q, 80) }, 'search'); return { ok:true }; }
+  if (b.type === 'search') { learnQuery(u, { q: str(b.q, 80), sub: Catalog.group(b.sub) ? b.sub : '', section: Catalog.valid(b.sub, b.section) ? b.section : '' }, 'search'); return { ok:true }; }
   const l = db.listings[b.listingId] || need(404, 'Объявление не найдено');
   if (!['hide','view','fav'].includes(b.type)) need(400, 'Неизвестное событие');
   learnListing(u, l, b.type); return { ok:true };
