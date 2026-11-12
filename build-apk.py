@@ -79,7 +79,7 @@ def main():
     parser.add_argument('--keystore', required=True)
     parser.add_argument('--password-file', required=True)
     parser.add_argument('--base', default='apk/GlassMarket9.8.apk')
-    parser.add_argument('--out', default='apk/GlassMarket9.10.apk')
+    parser.add_argument('--out', default='apk/GlassMarket9.11.apk')
     args = parser.parse_args()
     source = inside('android-src/assets/www/index.html')
     manifest = ET.parse(inside('android-src/AndroidManifest.xml')).getroot()
@@ -104,6 +104,7 @@ def main():
                 padding = -(target.fp.tell() + 30 + len(entry.filename.encode())) % 4
                 info.extra = struct.pack('<HH', 0xd935, padding) + b'\0' * padding
             target.writestr(info, content)
+        target.write(inside('android-src/assets/www/categories.js'), 'assets/www/categories.js', compress_type=zipfile.ZIP_DEFLATED)
     signer = ['java', '-jar', str(inside(args.signer))]
     subprocess.run(signer + ['sign', '--ks', str(inside(args.keystore)), '--ks-key-alias', 'glassmarket-release',
                             '--ks-pass', 'file:' + str(inside(args.password_file)),

@@ -20,6 +20,7 @@ const NOISE = new Set(('новинка новый новая новое нови
 
 const CAT_RU = { transport:'Транспорт', realty:'Недвижимость', electronics:'Электроника', clothes:'Одежда', home:'Дом и сад', animals:'Животные', food:'Продукты', other:'Другое',
   outer:'Верхняя одежда', knit:'Трикотаж', tops:'Топы и рубашки', pants:'Брюки', dress:'Платья', suits:'Костюмы', sport:'Спорт', under:'Бельё', shoes:'Обувь', bags:'Сумки', acc:'Аксессуары' };
+const Catalog = require('./android-src/assets/www/categories.js');
 const FLAGS = { '🇨🇳':'китай', '🇹🇷':'турция', '🇺🇿':'узбекистан', '🇰🇬':'киргизия', '🇰🇿':'казахстан', '🇷🇺':'россия', '🇹🇯':'таджикистан' };
 
 /* нормализация: флаги → слова, нижний регистр, ё→е, тадж. буквы → рус., убрать эмодзи/знаки */
@@ -57,7 +58,8 @@ function canonical(value) {
 }
 function layer1(l) {
   const out = [], a = l.a || {}, add = t => { if (t && !out.includes(t)) out.push(t); };
-  add(CAT_RU[l.sub] || CAT_RU[l.cat]);
+  const group = Catalog.group(l.sub || l.cat), section = Catalog.leaf(l.section);
+  add(section ? section.n : group ? group.n : CAT_RU[l.sub] || CAT_RU[l.cat]);
   const g = norm(a.gender || '').trim(), age = norm(a.age || l.ageGroup || '').trim();
   if (/дет|кудак/.test(g + ' ' + age) || l.sub === 'kids') add('детское');
   else if (/взрос/.test(age) || /муж|жен|унисекс/.test(g)) add('взрослое');
