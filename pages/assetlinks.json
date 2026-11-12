@@ -1,0 +1,14 @@
+[
+  {
+    "relation": [
+      "delegate_permission/common.handle_all_urls"
+    ],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "ru.glassmarket.app",
+      "sha256_cert_fingerprints": [
+        "B0:58:60:39:1B:7F:EB:BB:A3:B8:DC:F8:CB:D4:C5:79:00:95:F5:52:F7:C7:BD:16:80:96:1D:B9:8A:DA:6F:DC"
+      ]
+    }
+  }
+]
