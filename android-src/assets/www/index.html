@@ -1370,6 +1370,7 @@ findServer();
 (function(){
 window.SF=[];window.SFST='load';window.SReload=function(){SFST='load';refresh();last=0;load.t0=0;busy=0;load()};window.addEventListener('online',function(){if(SFST==='err')SReload()});var full={},last=0,busy=0;
 function fix(l){if(l.material){l.a=l.a||{};if(!l.a.mat)l.a.mat=l.material}l.photos=l.photos&&l.photos.length?l.photos:(l.photo?[l.photo]:[]);l.srv=1;l.ways=contactWays(l);delete l.tags;delete l.atags;if(!l.shopName&&l.seller)l.shopName=l.seller.shopName||l.seller.name||'';return l}
+window.SFix=fix;
 window.SFind=function(id){for(var i=0;i<SF.length;i++)if(SF[i].id===id)return SF[i];return null};
 function load(){
  if(busy||!GM.srv()){if(!GM.srv()){if(!load.t0)load.t0=Date.now();if(Date.now()-load.t0>8000&&SFST!=='err'){SFST='err';refresh()}setTimeout(load,1500)}return}
@@ -1752,8 +1753,7 @@ wrap();
    GM.api('GET','/listings/'+encodeURIComponent(sid)+'/similar?limit=4').then(function(r){
     if(!r||!r.items||!r.items.length)return;
     var b2=document.getElementById('sim');if(!b2||$('itemPg').dataset.id!==id)return;
-    b2.innerHTML=r.items.filter(function(x){return x.photo}).map(function(x){return card(fix(x))}).join('');
-    b2.querySelectorAll('[data-open]').forEach(function(el){});
+    b2.innerHTML=r.items.filter(function(x){return x.photo}).map(function(x){return card(SFix(x))}).join('');
    }).catch(function(){});
   }catch(e){}
  };
