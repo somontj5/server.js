@@ -135,7 +135,7 @@ const SYN = {
 const W2S = []; for (const k in SYN) for (const r of SYN[k].split(' ')) W2S.push([r, k]);
 const subOf = w => { for (const [r, k] of W2S) if (w.startsWith(r) || (w.length >= 5 && r.startsWith(w))) return k; return null; };
 const ATTR = { gender:1, age:1, ageGroup:1, color:1, season:1, size:1, mat:1, style:1, cond:1, made:1 }; // made — страна производства
-const BAZAARS = ['Саховат', 'Атуш', 'Сомон'], MADE = ['Китай', 'Узбекистан', 'Турция'];
+const BAZAARS = ['Саховат', 'Атуш', 'Сомон'], MADE = ['Китай', 'Узбекистан', 'Турция', 'Другая'];
 const bazOf = v => BAZAARS.includes(String(v || '').trim()) ? String(v).trim() : '';
 function priceTag(p) { const n = priceNum(p); if (n == null) return null; return 'p:' + (n < 500 ? 0 : n < 2000 ? 1 : n < 10000 ? 2 : n < 50000 ? 3 : 4); }
 /* ===== Автотеги: слой 1 (форма) + слой 2 (словарь tags.json, правится без кода) + слой 3 (ИИ) ===== */
@@ -384,10 +384,10 @@ function cleanListing(b, l) {
     if (b.section && !Catalog.valid(l.sub, b.section)) need(400, 'Подкатегория не относится к выбранной категории');
     l.section = b.section || '';
   }
-  if (b.a && typeof b.a === 'object') { l.a = {}; for (const k in b.a) if (ATTR[k]) l.a[k] = str(b.a[k], 30); if (l.a.made && !MADE.includes(l.a.made)) delete l.a.made; }
+  if (b.a && typeof b.a === 'object') { l.a = {}; for (const k in b.a) if (ATTR[k]) l.a[k] = k === 'mat' ? Catalog.materialList(b.a[k]).join(', ').slice(0, 1000) : str(b.a[k], 30); if (l.a.made && !MADE.includes(l.a.made)) delete l.a.made; }
   if (l.a && l.a.ageGroup && !['Взрослое','Детское'].includes(l.a.ageGroup)) need(400, 'Выберите возрастную группу');
   if (l.a && l.a.gender && !['Женское','Мужское','Унисекс','Детское'].includes(l.a.gender)) need(400, 'Выберите для кого товар');
-  if (b.material !== undefined) l.material = str(b.material, 60); // материал товара (понятное название: «Хлопок», «Натуральная кожа» и т.п.)
+  if (b.material !== undefined) l.material = Catalog.materialList(str(b.material, 1000)).join(', '); // материал товара (понятное название: «Хлопок», «Натуральная кожа» и т.п.)
   if (Array.isArray(b.ways)) l.ways = [...new Set(b.ways.filter(x => ['phone','wa'].includes(x)))];
   if (b.contact !== undefined) l.contact = ['chat','both','phone','wa'].includes(b.contact) ? b.contact : 'chat';
   if (Array.isArray(b.photos)) l.photos = b.photos.filter(p => typeof p === 'string' && (p.startsWith('data:image/') || p.startsWith('http'))).slice(0, 16);
@@ -396,7 +396,7 @@ function cleanListing(b, l) {
   if (l.cat === 'clothes') Object.assign(l, Catalog.normalize(l));
   if (b.sizes !== undefined) {
     try { l.sizes = Sizes.clean(b.sizes, l); } catch (e) { need(400, e.message); }
-    if (Sizes.options(l).required && !Sizes.has(l.sizes)) need(400, 'Выберите размер или единый размер');
+    if (Sizes.options(l).required && !Sizes.has(l.sizes)) need(400, 'Выберите размер или стандарт');
     l.a = Object.assign({}, l.a, {size: Sizes.label(l.sizes)});
   } else if (l.sizes && (b.sub !== undefined || b.section !== undefined || b.a !== undefined)) {
     try { l.sizes = Sizes.clean(l.sizes, l); } catch { need(400, 'Обновите размеры для выбранной категории'); }

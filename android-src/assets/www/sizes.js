@@ -2,7 +2,7 @@
 (function(root,factory){if(typeof module==='object'&&module.exports)module.exports=factory();else root.GMSizes=factory()})(this,function(){
 'use strict';
 function seq(a,b,step){var r=[];for(var i=a;i<=b;i+=step||1)r.push(String(i));return r}
-var sets={number:{name:'Числовой размер',values:seq(42,62,2)},letter:{name:'Буквенный размер',values:['XS','S','M','L','XL','2XL','3XL','4XL','5XL','6XL+']},waist:{name:'Талия, дюймы',values:seq(28,40)},shoe:{name:'Размер обуви',values:seq(35,47)},age:{name:'Возраст',values:['0-3 мес','3-6 мес','6-12 мес','1','1.5'].concat(seq(2,14),['15-18'])},height:{name:'Рост, см',values:seq(50,170,10)},sock:{name:'Размер носков',values:['36-40','41-46']},head:{name:'Обхват головы, см',values:seq(48,64)},standard:{name:'Единый размер',values:['Единый']}};
+var sets={number:{name:'Числовой размер',values:seq(42,62,2)},letter:{name:'Буквенный размер',values:['XS','S','M','L','XL','2XL','3XL','4XL','5XL','6XL+']},waist:{name:'Талия, дюймы',values:seq(28,40)},shoe:{name:'Размер обуви',values:seq(35,47)},age:{name:'Возраст',values:['0-3 мес','3-6 мес','6-12 мес','1','1.5'].concat(seq(2,14),['15-18'])},height:{name:'Рост, см',values:seq(50,170,10)},sock:{name:'Размер носков',values:['36-40','41-46']},head:{name:'Обхват головы, см',values:seq(48,64)},standard:{name:'Стандарт',values:['Стандарт']}};
 function context(l){var a=l.a||{},cat=l.cat==='clothes'?l.sub:l.cat;return {cat:cat||l.sub||'',section:l.section||'',kids:a.ageGroup==='Детское'||a.gender==='Детское',gender:a.gender||''}}
 function options(l){var c=context(l),ids=[],required=true,standard=false;
  if(!c.cat||c.cat==='all')return {groups:[],required:false,standard:false};
@@ -22,13 +22,13 @@ function options(l){var c=context(l),ids=[],required=true,standard=false;
  return {groups:groups,required:required,standard:standard};
 }
 function empty(){return {entries:[],standard:false}}
-function canonical(v){var s=String(v==null?'':v).trim().toUpperCase().replace(/[Хх]/g,'X').replace(/[Лл]/g,'L').replace(/ХЛ/g,'XL').replace(/,/g,'.').replace(/[–—]/g,'-');if(s==='XXL')s='2XL';if(s==='XXXL'||s==='3XL+')s='3XL';if(/^(СТАНДАРТ|ЕДИНЫЙ|ONE SIZE|ONESIZE)$/.test(s))s='Единый';return s}
+function canonical(v){var s=String(v==null?'':v).trim().toUpperCase().replace(/[Хх]/g,'X').replace(/[Лл]/g,'L').replace(/ХЛ/g,'XL').replace(/,/g,'.').replace(/[–—]/g,'-');if(s==='XXL')s='2XL';if(s==='XXXL'||s==='3XL+')s='3XL';if(/^(СТАНДАРТ|ЕДИНЫЙ|ONE SIZE|ONESIZE)$/.test(s))s='Стандарт';return s}
 function clean(spec,l){if(!spec||typeof spec!=='object'||Array.isArray(spec))throw Error('Некорректные размеры');var o=options(l),r=empty();
  if(!Array.isArray(spec.entries)||spec.entries.length>10)throw Error('Некорректный список размеров');
  spec.entries.forEach(function(e){var g=e&&o.groups.find(function(x){return x.id===e.system});if(!g||!Array.isArray(e.values)||e.values.length>100)throw Error('Система размеров не подходит категории');var vals=e.values.map(canonical);if(vals.some(function(v){return g.values.indexOf(v)<0}))throw Error('Размер не подходит категории или возрасту');var old=r.entries.find(function(x){return x.system===g.id});if(!old){old={system:g.id,values:[]};r.entries.push(old)}old.values=g.values.filter(function(v){return old.values.indexOf(v)>=0||vals.indexOf(v)>=0})});
  r.entries=r.entries.filter(function(e){return e.values.length});
- if(spec.standard){if(!o.standard)throw Error('Единый размер не подходит категории');r.standard=true}
- if(spec.standardRange){if(!r.standard)throw Error('Диапазон доступен только для единого размера');var range=spec.standardRange,g=o.groups.find(function(x){return x.id===range.system}),a=canonical(range.from),b=canonical(range.to);if(!g||g.values.indexOf(a)<0||g.values.indexOf(b)<0||g.values.indexOf(a)>g.values.indexOf(b))throw Error('Проверьте границы единого размера');r.standardRange={system:g.id,from:a,to:b}}
+ if(spec.standard){if(!o.standard)throw Error('Стандарт не подходит категории');r.standard=true}
+ if(spec.standardRange){if(!r.standard)throw Error('Диапазон доступен только для стандарта');var range=spec.standardRange,g=o.groups.find(function(x){return x.id===range.system}),a=canonical(range.from),b=canonical(range.to);if(!g||g.values.indexOf(a)<0||g.values.indexOf(b)<0||g.values.indexOf(a)>g.values.indexOf(b))throw Error('Проверьте границы стандарта');r.standardRange={system:g.id,from:a,to:b}}
  return r;
 }
 function has(s){return !!(s&&(s.standard||(s.entries||[]).some(function(e){return e.values.length}))) }
@@ -49,7 +49,7 @@ function parse(text,l){var r=empty(),o=options(l),s=String(text||'').slice(0,150
  });return r;
 }
 function read(l){if(l.sizes){try{return clean(l.sizes,l)}catch(e){return empty()}}return parse((l.a||{}).size||'',l)}
-function label(s){if(!s)return '';var parts=(s.entries||[]).map(function(e){var g=sets[e.system];return (e.system==='age'?'Возраст: ':e.system==='height'?'Рост: ':e.system==='waist'?'Талия: ':e.system==='head'?'Обхват головы: ':'')+e.values.join(', ')+(e.system==='height'||e.system==='head'?' см':'')});if(s.standard)parts.push('Единый'+(s.standardRange?' '+s.standardRange.from+'–'+s.standardRange.to:''));return parts.join('; ')}
+function label(s){if(!s)return '';var parts=(s.entries||[]).map(function(e){var g=sets[e.system];return (e.system==='age'?'Возраст: ':e.system==='height'?'Рост: ':e.system==='waist'?'Талия: ':e.system==='head'?'Обхват головы: ':'')+e.values.join(', ')+(e.system==='height'||e.system==='head'?' см':'')});if(s.standard)parts.push('Стандарт'+(s.standardRange?' '+s.standardRange.from+'–'+s.standardRange.to:''));return parts.join('; ')}
 // 2 = explicit or bounded standard match, 1 = unknown standard (last), 0 = no match.
 function rank(l,query){if(!has(query))return 2;var own=read(l),result=0;
  (query.entries||[]).forEach(function(q){var e=own.entries.find(function(x){return x.system===q.system});if(e&&q.values.some(function(v){return e.values.indexOf(v)>=0}))result=2;

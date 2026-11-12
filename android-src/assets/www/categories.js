@@ -16,5 +16,25 @@ function normalize(l){
  }
  return {sub:sub,section:section};
 }
-return {items:items,group:group,leaf:leaf,valid:valid,normalize:normalize};
+// Canonical labels are shared with the server; legacy aliases remain readable.
+var aliases={'Джинса (деним)':'Джинс','Трикотаж':'Трикотаж и вязка','Трикотаж/вязка':'Трикотаж и вязка','Синтетика (полиэстер)':'Синтетика','Смешанная ткань (хлопок + синтетика)':'Смесовая','Искусственная кожа (экокожа)':'Экокожа','Пуховик (пух/перо)':'Пух и перо','Синтепон / утеплитель':'Синтепон и утеплитель','Текстиль (ткань)':'Текстиль','Бархат':'Бархат и велюр','Бархат/велюр':'Бархат и велюр','Махровая':'Махровая ткань','Кожа/экокожа':'Кожа и экокожа'};
+var materialSets={
+ suits:'Бамбук|Бархат и велюр|Флис|Кашемир|Ангора|Махровая ткань|Хлопок|Трикотаж и вязка|Смесовая|Другое',
+ national:'Атлас|Шёлк|Бархат и велюр|Хлопок|Другое',
+ outer:'Натуральная кожа|Экокожа|Замша|Натуральный мех|Искусственный мех|Пух и перо|Синтепон и утеплитель|Шерсть|Синтетика|Джинс|Флис|Ангора|Хлопок|Другое',
+ dress:'Хлопок|Шёлк|Лён|Вискоза|Трикотаж и вязка|Атлас|Бархат и велюр|Синтетика|Смесовая|Другое',
+ knit:'Трикотаж и вязка|Шерсть|Ангора|Кашемир|Флис|Хлопок|Бамбук|Махровая ткань|Смесовая|Другое',
+ pants:'Джинс|Хлопок|Трикотаж и вязка|Синтетика|Смесовая|Кожа и экокожа|Другое',
+ sport:'Хлопок|Трикотаж и вязка|Синтетика|Бамбук|Флис|Смесовая',
+ headwear:'Хлопок|Шёлк|Шерсть|Вискоза|Трикотаж и вязка|Искусственный мех|Синтетика',
+ shoes:'Натуральная кожа|Экокожа|Замша|Текстиль|Резина|Синтетика',
+ bags:'Натуральная кожа|Экокожа|Текстиль|Синтетика',
+ acc:'Хлопок|Шерсть|Натуральная кожа|Экокожа|Металл|Пластик|Другое',
+ other:'Хлопок|Шерсть|Натуральная кожа|Экокожа|Металл|Пластик|Другое'
+};
+materialSets.home=materialSets.suits;materialSets.tops=materialSets.dress;materialSets.under=materialSets.sport;
+function materialList(value){var a=Array.isArray(value)?value:String(value||'').split(',');return a.reduce(function(r,v){v=String(v).trim();v=aliases[v]||v;if(v&&r.indexOf(v)<0)r.push(v);return r},[])}
+function materialOptions(cat,section){if(!cat||cat==='all')return Object.keys(materialSets).reduce(function(r,k){materialSets[k].split('|').forEach(function(v){if(r.indexOf(v)<0)r.push(v)});return r},[]);var a=(materialSets[cat]||materialSets.other).split('|');if(cat==='under'&&section==='under-socks')a.splice(a.length-1,0,'Шерсть');return a}
+function genderLabel(value,attrs){if(value==='Унисекс'||value==='Для всех')return 'Для всех';if(attrs&&(attrs.ageGroup==='Детское'||attrs.gender==='Детское'))return value==='Женское'?'Девочки':value==='Мужское'?'Мальчики':value;return value}
+return {items:items,group:group,leaf:leaf,valid:valid,normalize:normalize,materialList:materialList,materialOptions:materialOptions,genderLabel:genderLabel};
 });

@@ -70,3 +70,31 @@ test('Live isolated API: persistence, validation, size sorting, legacy suites',a
  console.log(old.stdout);
  }finally{await service.stop()}
 });
+
+const Catalog=require('./android-src/assets/www/categories');
+test('Materials are contextual, aliases preserved, labels have no slashes or parentheses',()=>{
+ const common=['Бамбук','Бархат и велюр','Флис','Кашемир','Ангора','Махровая ткань','Хлопок','Трикотаж и вязка','Смесовая','Другое'];
+ assert.deepEqual(Catalog.materialOptions('suits'),common);assert.deepEqual(Catalog.materialOptions('home'),common);
+ assert.deepEqual(Catalog.materialOptions('national'),['Атлас','Шёлк','Бархат и велюр','Хлопок','Другое']);
+ assert.deepEqual(Catalog.materialList('Джинса (деним), Трикотаж, Смешанная ткань (хлопок + синтетика)'),['Джинс','Трикотаж и вязка','Смесовая']);
+ assert.deepEqual(Catalog.materialList(['Бархат','Бархат/велюр','Флис']),['Бархат и велюр','Флис']);
+ assert.deepEqual(Catalog.materialList('Синтепон / утеплитель, Текстиль (ткань), Пуховик (пух/перо)'),['Синтепон и утеплитель','Текстиль','Пух и перо']);
+ for(const cat of Catalog.items){const opts=Catalog.materialOptions(cat.id);assert.equal(new Set(opts).size,opts.length);for(const v of opts)assert.ok(!/[\\/()]/.test(v),v);assert.equal(opts.includes('Резина'),cat.id==='shoes');assert.equal(opts.includes('Текстиль'),['shoes','bags'].includes(cat.id));assert.equal(opts.includes('Синтепон и утеплитель'),cat.id==='outer');}
+ assert.ok(Catalog.materialOptions('under','under-socks').includes('Шерсть'));assert.ok(!Catalog.materialOptions('under','under-lingerie').includes('Шерсть'));
+ for(const cat of ['dress','tops'])for(const v of ['Лён','Вискоза'])assert.ok(Catalog.materialOptions(cat).includes(v));
+ for(const cat of ['outer','suits','home','knit','pants','sport','shoes','bags'])assert.ok(!Catalog.materialOptions(cat).includes('Лён'));
+ assert.equal(Catalog.genderLabel('Женское',{ageGroup:'Детское'}),'Девочки');assert.equal(Catalog.genderLabel('Мужское',{ageGroup:'Детское'}),'Мальчики');assert.equal(Catalog.genderLabel('Унисекс',{}),'Для всех');
+ assert.equal(Sizes.label({entries:[],standard:true}),'Стандарт');assert.equal(Sizes.canonical('Единый'),'Стандарт');
+});
+test('API keeps multiple materials without truncation, accepts other production and legacy names',async()=>{
+ const service=await start(18700+Math.floor(Math.random()*200));
+ async function api(path,method='GET',body){const r=await fetch(service.base+path,{method,headers:{authorization:'Bearer test-seller','content-type':'application/json'},body:body?JSON.stringify(body):undefined});return {status:r.status,data:await r.json()}}
+ try{
+  const mat=Catalog.materialOptions('suits').join(', '),draft={name:'Тест материалов',cat:'clothes',sub:'suits',section:'suits-two',a:{gender:'Унисекс',ageGroup:'Детское',made:'Другая',mat},material:mat,row:'1',shopNum:'1',shopName:'Тест',photos:['data:image/png;base64,AA=='],sizes:spec('age','3','4')};
+  const r=await api('/listings','POST',draft);assert.equal(r.status,200);assert.equal(r.data.a.mat,mat);assert.equal(r.data.material,mat);assert.equal(r.data.a.made,'Другая');
+  assert.equal((await api('/listings/'+r.data.id)).data.a.mat,mat);
+  const updated=await api('/listings/'+r.data.id,'PUT',{a:{...draft.a,mat:'Джинса (деним), Трикотаж, Флис'},material:'Джинса (деним), Трикотаж, Флис'});
+  assert.equal(updated.status,200);assert.equal(updated.data.a.mat,'Джинс, Трикотаж и вязка, Флис');assert.equal(updated.data.material,updated.data.a.mat);
+  const all=await api('/listings?sub=suits&ageGroup='+encodeURIComponent('Детское'));assert.ok(all.data.items.some(x=>x.id===r.data.id));
+ }finally{await service.stop()}
+});
