@@ -21,11 +21,16 @@ def inside(value):
 def patch_manifest(data, version_code, version_name):
     data = bytearray(data)
     strings, string_positions = [], []
+    pool_position = pool_size = 0
+    replacement = None
     position = 8
     while position < len(data):
         kind, header_size, chunk_size = struct.unpack_from('<HHI', data, position)
         if kind == 0x0001:
-            count, _, flags, strings_start = struct.unpack_from('<IIII', data, position + 8)
+            pool_position, pool_size = position, chunk_size
+            count, style_count, flags, strings_start = struct.unpack_from('<IIII', data, position + 8)
+            if style_count:
+                raise ValueError('Styled string pools are not supported')
             if flags & 0x100:
                 raise ValueError('Expected the UTF-16 string pool used by the original shell')
             for i in range(count):
@@ -47,11 +52,25 @@ def patch_manifest(data, version_code, version_name):
                     struct.pack_into('<I', data, attribute + 16, version_code)
                 if name == 'versionName':
                     index = raw_index if raw_index != 0xffffffff else struct.unpack_from('<I', data, attribute + 16)[0]
-                    start, length = string_positions[index]
-                    if len(version_name) != length:
-                        raise ValueError('Release version must match original version-name length')
-                    data[start:start + length * 2] = version_name.encode('utf-16-le')
+                    replacement = index
         position += chunk_size
+    if replacement is None:
+        raise ValueError('Missing versionName')
+    strings[replacement] = version_name
+    offsets, content = [], bytearray()
+    for value in strings:
+        encoded = value.encode('utf-16-le')
+        length = len(encoded) // 2
+        if length >= 0x8000:
+            raise ValueError('AXML string too long')
+        offsets.append(len(content))
+        content.extend(struct.pack('<H', length) + encoded + b'\0\0')
+    start = 28 + len(offsets) * 4
+    content.extend(b'\0' * (-(start + len(content)) % 4))
+    pool = struct.pack('<HHIIIIII', 1, 28, start + len(content), len(offsets), 0, 0, start, 0)
+    pool += struct.pack('<' + 'I' * len(offsets), *offsets) + content
+    data[pool_position:pool_position + pool_size] = pool
+    struct.pack_into('<I', data, 4, len(data))
     return bytes(data)
 
 def main():
@@ -60,7 +79,7 @@ def main():
     parser.add_argument('--keystore', required=True)
     parser.add_argument('--password-file', required=True)
     parser.add_argument('--base', default='apk/GlassMarket9.8.apk')
-    parser.add_argument('--out', default='apk/GlassMarket9.9.apk')
+    parser.add_argument('--out', default='apk/GlassMarket9.10.apk')
     args = parser.parse_args()
     source = inside('android-src/assets/www/index.html')
     manifest = ET.parse(inside('android-src/AndroidManifest.xml')).getroot()
