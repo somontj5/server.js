@@ -410,7 +410,7 @@ button:focus:not(:focus-visible){outline:0}
         <div id="hist" hidden></div>
       </div>
     </div>
-    <div class="cats" id="cats"></div>
+    <div class="cats" id="cats"></div><div id="subcats" class="subcats" hidden></div>
     <div class="chips" id="fchips" hidden></div>
     <div class="sect"><h2 id="gTitle">Рекомендации</h2><span id="gCount"></span></div>
     <div class="grid" id="grid"></div>
@@ -475,6 +475,7 @@ button:focus:not(:focus-visible){outline:0}
 <input id="fileIn" type="file" accept="image/*" multiple hidden>
 <div id="toast"></div>
 
+<script src="categories.js"></script>
 <script>
 /* ===================== иконки ===================== */
 var P={
@@ -620,7 +621,8 @@ return{norm:norm,toks:toks,stem:stem,lay:lay,autoTags:autoTags,search:search,sug
 
 /* ===================== данные ===================== */
 var K={L:'sm3_listings',F:'sm3_favs',D:'sm6_draft',ME:'sm5_me',H:'sm5_hist'};
-var CATS=[{id:'outer',n:'Верхняя одежда'},{id:'dress',n:'Платья и юбки'},{id:'tops',n:'Футболки и рубашки'},{id:'knit',n:'Свитера и худи'},{id:'pants',n:'Брюки и джинсы'},{id:'suits',n:'Костюмы'},{id:'sport',n:'Спортивная одежда'},{id:'under',n:'Нижнее бельё'},{id:'home',n:'Домашняя одежда'},{id:'shoes',n:'Обувь'},{id:'bags',n:'Сумки и рюкзаки'},{id:'acc',n:'Аксессуары'},{id:'other',n:'Другое'}];
+var CATS=GMCatalog.items;
+P.national=P.dress;P.headwear='<path d="M4 15a8 8 0 0 1 16 0M2 16h20M7 16v4h10v-4"/>';
 var SZ_CL=['XS','S','M','L','XL','XXL','3XL+'],SZ_SH=['35','36','37','38','39','40','41','42','43','44','45','46+'],SZ_KID=['до 1 г','1–3 г','4–7 л','8–12 л','13+ л'];
 var ATTRS=[{k:'gender',n:'Для кого',o:['Женское','Мужское','Детское','Унисекс']},
  {k:'size',n:'Размер',o:function(c,g){if(c==='acc'||c==='bags')return['Без размера'];if(g==='Детское')return SZ_KID;return c==='shoes'?SZ_SH:SZ_CL}},
@@ -644,9 +646,9 @@ function jset(k,v){try{localStorage.setItem(k,JSON.stringify(v));return true}cat
 var listings=jget(K.L,[]).filter(function(l){return l&&l.userCreated!==false&&!/^s\d+$/.test(l.id)&&l.photos&&l.photos.length&&l.photos[0].indexOf('data:image/svg')!==0});
 var favs=jget(K.F,[]).filter(function(id){return listings.some(function(l){return l.id===id})});
 var me=jget(K.ME,{}),hist=jget(K.H,[]),chats=jget('sm6_chats',[]);
-listings.forEach(function(l){l.ways=contactWays(l);delete l.tags;delete l.atags});
+listings.forEach(function(l){var c=GMCatalog.normalize(l);l.cat=c.sub;l.section=c.section;l.ways=contactWays(l);delete l.tags;delete l.atags});
 save();
-var S={cat:'all',sort:'rec',pmin:'',pmax:'',q:'',f:{},view:'home',myTab:'a'};
+var S={section:'',cat:'all',sort:'rec',pmin:'',pmax:'',q:'',f:{},view:'home',myTab:'a'};
 
 function $(id){return document.getElementById(id)}
 function esc(s){return String(s==null?'':s).replace(/[&<>"']/g,function(m){return{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]})}
@@ -710,7 +712,7 @@ function visible(){
   var q=S.q.trim().toLowerCase(),a=parseFloat(S.pmin),b=parseFloat(S.pmax);
   var arr=(window.SF||[]).concat(listings).filter(function(l){
     if(l.archived)return false;
-    if(S.cat!=='all'&&l.cat!==S.cat)return false;
+    if(S.cat!=='all'&&l.cat!==S.cat)return false;if(S.section&&l.section!==S.section)return false;
     for(var fk in S.f)if(S.f[fk]&&(l.a||{})[fk]!==S.f[fk])return false;
     if(!isNaN(a)||!isNaN(b)){var x=num(l);if(x==null)return false;if(!isNaN(a)&&x<a)return false;if(!isNaN(b)&&x>b)return false}
     return true});
