@@ -8,3 +8,5 @@ gm_key.pem
 .local-build/
 *.jks
 *.keystore
+
+apk/*-unsigned.apk

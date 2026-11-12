@@ -15,6 +15,7 @@ const PUB = process.env.PUBLIC_URL || '';
 const DB_FILE = process.env.DB_FILE || 'data/db.json';
 const Catalog = require('./android-src/assets/www/categories.js');
 const Sizes = require('./android-src/assets/www/sizes.js');
+const Validation = require('./android-src/assets/www/validation.js');
 const CATS = ['transport','realty','electronics','clothes','home','animals','food','other'];
 
 let db = { users:{}, sessions:{}, codes:{}, listings:{}, threads:{}, reviews:[], searches:{} };
@@ -106,7 +107,7 @@ async function sendCard(chat, id) {
   } catch (e) { console.error(e); }
   return say(chat, cap);
 }
-const shareUrl = id => BOT ? `https://t.me/${BOT}?start=l_${id}` : (PUB ? `${PUB}/l/${id}` : '');
+const shareUrl = id => PUB ? `${PUB}/l/${encodeURIComponent(id)}` : '';
 function notify(userId, text) { const u = db.users[userId]; if (u && !u.mute) say(u.chatId, text); }
 
 /* ================= Скрытые теги и рекомендации ================= */
@@ -195,9 +196,17 @@ function learn(u, tags, kind) {
 }
 function learnListing(u, l, kind) {
   if (!u || !l || l.sellerId === u.id) return;
+  if (kind === 'view') {
+    u.viewSignals = u.viewSignals || {}; const t = now();
+    if (u.viewSignals[l.id] && t - u.viewSignals[l.id] < 30 * 60e3) return false;
+    u.viewSignals[l.id] = t;
+    const ids = Object.keys(u.viewSignals).sort((a,b) => u.viewSignals[b] - u.viewSignals[a]);
+    for (const id of ids.slice(200)) delete u.viewSignals[id];
+  }
   learn(u, l.tags || (l.tags = makeTags(l)), kind);
   if (kind === 'view') { u.seen = (u.seen || []).filter(x => x !== l.id); u.seen.push(l.id); if (u.seen.length > 200) u.seen.shift(); }
   if (kind === 'hide') { u.hidden = u.hidden || []; if (!u.hidden.includes(l.id)) u.hidden.push(l.id); if (u.hidden.length > 500) u.hidden.shift(); }
+  return true;
 }
 const learnQuery = (u, s, kind) => { const ws = words(s.q); learn(u, [...ws.map(w => 'w:' + w), ...ws.map(subOf).filter(Boolean).map(g => 'g:' + g), ...(SUBS.includes(s.sub || s.cat) ? ['g:' + (s.sub || s.cat)] : []), ...(s.section ? ['d:' + s.section] : [])], kind); };
 function hash(s) { let h = 2166136261; for (let i = 0; i < s.length; i++) h = Math.imul(h ^ s.charCodeAt(i), 16777619); return (h >>> 0) / 4294967296; }
@@ -218,13 +227,13 @@ function recommend(arr, u) {
     if (u && l.sellerId === u.id) sc -= 4;
     return { l, sc, aff };
   }).sort((a,b) => b.sc - a.sc);
-  if (cold) return scored.map(x => x.l);
+  // Diversify cold starts too; do not let one seller flood discovery.
   // разнообразие: каждая 5-я позиция — «открытие» вне интересов, не больше 3 подряд из одной категории
   const main = scored.filter(x => x.aff > 0.5), explore = scored.filter(x => x.aff <= 0.5), out = [];
   while (main.length || explore.length) {
     let src = (out.length % 5 === 4 && explore.length) || !main.length ? explore : main;
     let i = 0;
-    if (src === main && out.length >= 3 && out.slice(-3).every(l => (l.sub||l.cat) === (out[out.length-1].sub||out[out.length-1].cat))) { const j = main.findIndex(x => (x.l.sub||x.l.cat) !== (out[out.length-1].sub||out[out.length-1].cat)); if (j >= 0) i = j; }
+    if (out.length) { const recent = out.slice(-3), prev = out[out.length-1]; const fits = x => x.l.sellerId !== prev.sellerId && !(recent.length === 3 && recent.every(l => (l.sub||l.cat) === (x.l.sub||x.l.cat))); let j = src.findIndex(fits); if (j < 0) { const other = src === main ? explore : main; j = other.findIndex(fits); if (j >= 0) src = other; } if (j >= 0) i = j; }
     out.push(src.splice(i, 1)[0].l);
   }
   return out;
@@ -368,13 +377,17 @@ function matches(l, s) {
 }
 function cleanListing(b, l) {
   l = l || {};
+  for (const [key,kind] of [['name','title'],['desc','desc'],['shopName','shop']]) {
+    const value = b[key] !== undefined ? b[key] : l[key];
+    const error = Validation.error(kind, value); if (error) need(400, error);
+  }
   if (b.cat !== undefined) l.cat = CATS.includes(b.cat) ? b.cat : 'other';
   ['name','price','shopName'].forEach(k => { if (b[k] !== undefined) l[k] = str(b[k], 80); });
   if (b.bazaar !== undefined) l.bazaar = bazOf(b.bazaar);
   if (b.row !== undefined) l.row = onlyDigits(b.row).slice(0, 4);
   if (b.shopNum !== undefined) l.shopNum = onlyDigits(b.shopNum).replace(/^0+/, '').slice(0, 4); // контейнер 1..9999
   if (b.phone !== undefined) { try { l.phone = tjPhone(b.phone); } catch { l.phone = ''; } } // старые номера (не +992) просто сбрасываем
-  if (b.desc !== undefined) l.desc = str(b.desc, 1000);
+  if (b.desc !== undefined) l.desc = Validation.clean(b.desc);
   if (b.sub !== undefined) {
     if (!SUBS.includes(b.sub) && b.sub !== '') need(400, 'Неизвестная категория');
     if (l.sub !== b.sub) l.section = '';
@@ -438,7 +451,7 @@ route('POST', '/auth/logout', 1, (q, b, u, req) => { delete db.sessions[req.toke
 
 // --- Профиль ---
 route('GET', '/me', 1, (q, b, u) => meUser(u));
-route('PUT', '/me', 1, async (q, b, u) => { if (b.ig) { const g = igNorm(b.ig); if (g && g !== u.ig) { if (!IGC[g] || IGC[g].ex == null) await igLoad(g); if (IGC[g] && IGC[g].ex === false) need(400, 'Instagram-аккаунт @' + g + ' не найден'); } }
+route('PUT', '/me', 1, async (q, b, u) => { for (const [key,kind] of [['name','person'],['shopName','shop']]) { if (b[key] !== undefined && (key === 'name' || b[key])) { const error = Validation.error(kind,b[key]); if (error) need(400,error); } } if (b.ig) { const g = igNorm(b.ig); if (g && g !== u.ig) { if (!IGC[g] || IGC[g].ex == null) await igLoad(g); if (IGC[g] && IGC[g].ex === false) need(400, 'Instagram-аккаунт @' + g + ' не найден'); } }
   ['name','shopName'].forEach(k => { if (b[k] !== undefined) u[k] = str(b[k], 60); });
   if (b.bazaar !== undefined) u.bazaar = bazOf(b.bazaar);
   if (b.row !== undefined) u.row = onlyDigits(b.row).slice(0, 4); if (b.shopNum !== undefined) { const sn = onlyDigits(b.shopNum).replace(/^0+/, '').slice(0, 4); checkShop(sn, u.id, u.shopNum); u.shopNum = sn; } if (b.phone !== undefined) u.phone = tjPhone(b.phone); if (b.about !== undefined) u.about = str(b.about, 200); if (b.ig !== undefined) { u.ig = igNorm(b.ig); if (u.ig) igLoad(u.ig); } if (b.avatar !== undefined) { if (!b.avatar) { delete u.avatar; } else { if (!/^data:image\/(jpeg|png|webp);base64,/.test(b.avatar) || b.avatar.length > 400e3) need(400, 'Фото слишком большое'); u.avatar = b.avatar; u.avTs = now(); } } touch(); return meUser(u); });
@@ -541,13 +554,13 @@ route('GET', '/suggest', 0, (q) => {
     else for (const w of nm.split(' ')) if (w.length >= 3 && last && w.startsWith(last)) add((head ? head + ' ' : '') + w, 1); }
   return { items: Object.keys(cnt).sort((a, b) => cnt[b] - cnt[a] || a.length - b.length).slice(0, 8), q: n !== raw ? n : undefined };
 });
-route('GET', '/listings/:id', 0, (q, b, u, r, p) => { const l = db.listings[p.id] || need(404, 'Объявление не найдено'); l.views = (l.views||0) + 1; bump(l, 'v'); learnListing(u, l, 'view'); touch(); return listingOut(l, true); });
+route('GET', '/listings/:id', 0, (q, b, u, r, p) => { const l = db.listings[p.id] || need(404, 'Объявление не найдено'); const tracked = learnListing(u, l, 'view'); if (!u || tracked) { l.views = (l.views||0) + 1; bump(l, 'v'); } touch(); return listingOut(l, true); });
 // «Похожие объявления»: совпадение автотегов (включая найденные по словарю синонимы)
 route('GET', '/listings/:id/similar', 0, (q, b, u, r, p) => {
   const l = db.listings[p.id] || need(404, 'Объявление не найдено');
   const baseTags = new Set(l.tags || makeTags(l)), hidden = new Set(u && u.hidden || []);
   const baseWords = new Set(words(l.name));
-  const candidates = Object.values(db.listings).filter(x => !x.archived && x.id !== l.id && !hidden.has(x.id));
+  const candidates = Object.values(db.listings).filter(x => !x.archived && x.id !== l.id && !hidden.has(x.id) && (!u || x.sellerId !== u.id));
   const recOrder = new Map(recommend(candidates, u).map((x, i) => [x.id, i]));
   const ranked = candidates.map(x => {
     if (Sizes.context(l).kids !== Sizes.context(x).kids) return null;
@@ -563,7 +576,10 @@ route('GET', '/listings/:id/similar', 0, (q, b, u, r, p) => {
     if (sameGroup) score += 6;
     if (l.section && x.section === l.section) score += 10;
     const a = l.a || {}, b = x.a || {};
-    if (a.gender && b.gender && a.gender !== b.gender && a.gender !== 'Унисекс' && b.gender !== 'Унисекс') score -= 3;
+    if (a.gender && b.gender && a.gender !== b.gender && a.gender !== 'Унисекс' && b.gender !== 'Унисекс') return null;
+    if (l.sizes && x.sizes && Sizes.rank(x,l.sizes) === 2) score += 1;
+    const priceA = parseFloat(l.price), priceB = parseFloat(x.price);
+    if (priceA > 0 && priceB > 0) score += Math.max(0, 1 - Math.abs(Math.log(priceA / priceB))); 
     // Personalization breaks close matches; it must not displace genuinely similar items.
     score += 0.75 * (1 - recOrder.get(x.id) / Math.max(1, candidates.length));
     return { x, score };
@@ -767,7 +783,7 @@ route('GET', '/me/interests', 1, (q, b, u) => {   // отладка: что си
   const t = now(), I = u.interests || {};
   return { items: Object.keys(I).map(k => ({ tag:k, w:+decayed(I[k], t).toFixed(2) })).sort((a,b) => b.w - a.w).slice(0, 30) };
 });
-route('DELETE', '/me/interests', 1, (q, b, u) => { u.interests = {}; u.seen = []; u.hidden = []; touch(); return { ok:true }; });
+route('DELETE', '/me/interests', 1, (q, b, u) => { u.interests = {}; u.seen = []; u.hidden = []; u.viewSignals = {}; touch(); return { ok:true }; });
 
 function send(res, code, obj) {
   if (res.headersSent || res.writableEnded) return;
@@ -785,14 +801,16 @@ http.createServer((req, res) => {
   const lm = req.method === 'GET' && url.pathname.match(/^\/l\/([\w-]+)$/);
   if (lm) {
     const l = db.listings[lm[1]], esc = v => String(v || '').replace(/[&<>"]/g, c => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;' })[c]);
-    const tgl = l && BOT ? `https://t.me/${BOT}?start=l_${l.id}` : '';
+    const appLink = 'glassmarket://listing/' + encodeURIComponent(lm[1]);
+    const download = 'https://github.com/somontj5/server.js/raw/main/apk/GlassMarket9.13.apk';
+    const intent = 'intent://listing/' + encodeURIComponent(lm[1]) + '#Intent;scheme=glassmarket;package=ru.glassmarket.app;S.browser_fallback_url=' + encodeURIComponent(download) + ';end';
     const html = l && !l.archived ? `<!doctype html><meta charset=utf-8><meta name=viewport content="width=device-width,initial-scale=1"><title>${esc(l.name)}</title><meta property="og:title" content="${esc(l.name + ' — ' + (l.price||''))}"><meta property="og:description" content="${esc('Ряд ' + l.row + ', магазин №' + l.shopNum)}">
-<body style="font-family:sans-serif;max-width:520px;margin:auto;padding:12px">${l.photos[0] ? `<img src="/l/${esc(l.id)}/photo" style="width:100%;border-radius:12px">` : ''}<h2>${esc(l.name)}</h2><h3>${esc(l.price || 'цена не указана')}</h3><p>📍 ${l.bazaar ? 'Базар ' + esc(l.bazaar) + ', ' : ''}Ряд ${esc(l.row)}, магазин №${esc(l.shopNum)} (${esc(l.shopName)})</p>${l.material ? `<p>🧵 Материал: ${esc(l.material)}</p>` : ''}<p style="white-space:pre-wrap">${esc(l.desc)}</p>${tgl ? `<a href="${tgl}" style="display:block;text-align:center;background:#2aabee;color:#fff;padding:14px;border-radius:12px;text-decoration:none">Открыть в Telegram</a>` : ''}</body>`
+<body style="font-family:sans-serif;max-width:520px;margin:auto;padding:12px">${l.photos[0] ? `<img src="/l/${esc(l.id)}/photo" style="width:100%;border-radius:12px">` : ''}<h2>${esc(l.name)}</h2><h3>${esc(l.price || 'цена не указана')}</h3><p>📍 ${l.bazaar ? 'Базар ' + esc(l.bazaar) + ', ' : ''}Ряд ${esc(l.row)}, магазин №${esc(l.shopNum)} (${esc(l.shopName)})</p>${l.material ? `<p>🧵 Материал: ${esc(l.material)}</p>` : ''}<p style="white-space:pre-wrap">${esc(l.desc)}</p><a id="openApp" href="${esc(intent)}" style="display:block;text-align:center;background:#00aaff;color:#fff;padding:14px;border-radius:12px;text-decoration:none">Открыть в СтеклоМаркет</a><p style="text-align:center"><a href="${download}">Скачать приложение 9.13</a></p><p style="color:#777;font-size:13px">Если приложение не открылось автоматически, нажмите кнопку выше.</p><script>if(/Android/i.test(navigator.userAgent))location.href=${JSON.stringify(appLink)};</script></body>`
       : '<!doctype html><meta charset=utf-8><h3 style="font-family:sans-serif">Объявление снято с публикации</h3>';
-    res.writeHead(l ? 200 : 404, { 'content-type': 'text/html; charset=utf-8' }); return res.end(html);
+    res.writeHead(l && !l.archived ? 200 : 404, { 'content-type': 'text/html; charset=utf-8', 'cache-control':'no-store', 'x-content-type-options':'nosniff' }); return res.end(html);
   }
   const pm = req.method === 'GET' && url.pathname.match(/^\/l\/([\w-]+)\/photo$/);
-  if (pm) { const l = db.listings[pm[1]], ph = l && l.photos[0], m = ph && ph.match(/^data:(image\/\w+);base64,(.+)$/);
+  if (pm) { const l = db.listings[pm[1]], ph = l && !l.archived && l.photos[0], m = ph && ph.match(/^data:(image\/\w+);base64,(.+)$/);
     if (m) { res.writeHead(200, { 'content-type': m[1], 'cache-control': 'max-age=86400' }); return res.end(Buffer.from(m[2], 'base64')); }
     if (ph) { res.writeHead(302, { location: ph }); return res.end(); } res.writeHead(404); return res.end(); }
   const im = req.method === 'GET' && url.pathname.match(/^\/ig\/([a-z0-9._]{1,30})\/pic$/);

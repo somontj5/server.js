@@ -3,6 +3,7 @@ const { chromium } = require('./.local-build/node_modules/playwright');
 const fs = require('fs');
 const assert = require('assert/strict');
 (async () => {
+  const service=await require('./test-fixture').start(8091);
   const browser = await chromium.launch({headless:true,executablePath:process.env.CHROME_PATH||chromium.executablePath(),args:['--no-sandbox']});
   try {
     const context = await browser.newContext({viewport:{width:320,height:700}});
@@ -17,7 +18,7 @@ const assert = require('assert/strict');
         return route.fulfill({status:response.status,contentType:'application/json',body:await response.text()});
       }
       if (url.hostname === 'gm.test') {
-        const file = ['categories.js','sizes.js','sizes-ui.js'].find(x=>url.pathname==='/'+x)||'index.html';
+        const file = ['validation.js','categories.js','sizes.js','sizes-ui.js'].find(x=>url.pathname==='/'+x)||'index.html';
         return route.fulfill({contentType:file.endsWith('.js')?'application/javascript':'text/html',body:fs.readFileSync('android-src/assets/www/'+file)});
       }
       if (/github/.test(url.hostname)) return route.fulfill({contentType:'text/plain',body:'https://gm.test/api'});
@@ -29,6 +30,8 @@ const assert = require('assert/strict');
       localStorage.setItem('gm_user',JSON.stringify({id:'buyer',name:'Buyer'}));
     });
     await page.goto('https://gm.test/');
+    assert.ok(!(await page.locator('#grid').innerText()).includes('Разместите первое'));
+    assert.equal(await page.evaluate(()=>GMValidation.error('person','Ҷамшед')),'');
     await page.waitForSelector('#grid .card',{timeout:10000});
     assert.equal(await page.locator('#cats [data-c]').count(),15);
     await page.click('[data-c="suits"]');
@@ -114,6 +117,23 @@ const assert = require('assert/strict');
     for(const cat of await page.evaluate(()=>CATS.map(x=>x.id))){await page.click('[data-cat="'+cat+'"]');assert.ok(!/[\\/()]/.test(await page.locator('#f-attrs').innerText()));}
     await page.click('[data-cat="bags"]');
     assert.equal(await page.locator('#f-a_size').count(),0);
+    assert.equal(await page.locator('[data-size-action="parse"]').count(),0);
+    assert.equal(await page.locator('select.color-select').count(),1);
+    await page.selectOption('select.color-select','Синий');assert.equal(await page.evaluate(()=>F.a.color),'Синий');
+    const phone=page.locator('#sellPg [data-k="phone"]');
+    await phone.fill('901234567');await phone.press('End');
+    for(let i=0;i<20;i++)await phone.press('Backspace');
+    assert.equal(await phone.inputValue(),'');assert.equal(await page.evaluate(()=>F.phone),'');
+    await phone.fill('+992 90 123 45 67');await phone.press('Home');
+    for(let i=0;i<7;i++)await phone.press('ArrowRight');await phone.press('Backspace');
+    assert.equal((await phone.inputValue()).replace(/\D/g,''),'99291234567');
+    await page.evaluate(()=>{gmOpenListing('match')});
+    await page.waitForFunction(()=>location.hash==='#item/match');
+    await page.waitForSelector('#itemPg .ititle');
+    assert.equal(await page.evaluate(()=>find('match').srv),1);
+    await page.evaluate(()=>{F=blankForm();drawSell();$('sellPg').hidden=false;});
+    assert.equal(await page.locator('[data-k="desc"]').getAttribute('minlength'),'20');
+    assert.equal(await page.locator('[data-k="desc"]').getAttribute('maxlength'),'1500');
     await page.evaluate(()=>{$('sellPg').hidden=true;location.hash='home';});
     await page.waitForTimeout(200);
     await page.click('#btnFilter');
@@ -136,5 +156,5 @@ const assert = require('assert/strict');
     assert.equal(await page.locator('#f-section').evaluate(e=>getComputedStyle(e).animationName),'none');
     assert.deepEqual(errors,[]);
     console.log('Browser hierarchy, filters, form, similar, favourites, scroll and reduced motion PASS');
-  } finally { await browser.close(); }
+  } finally { await browser.close(); await service.stop(); }
 })().catch(e=>{console.error(e);process.exit(1);});

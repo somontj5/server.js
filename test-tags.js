@@ -80,7 +80,7 @@ test('Live isolated API: auth, synonyms, version conflicts, idempotency, hiding,
   }
   assert.equal((await api('/internal/ai/jobs')).status, 401);
   assert.equal((await api('/internal/ai/jobs', 'GET', null, '')).status, 401);
-  let created = await api('/listings', 'POST', { name: 'Жилетка загадочное', cat: 'clothes', sub: 'outer', photos: ['data:image/png;base64,AA=='], row: '1', shopNum: '1', shopName: 'Тест', phone: '+992 90 123 45 67', contact: 'both', ways: ['phone', 'wa'] });
+  let created = await api('/listings', 'POST', { desc: 'Качественная жилетка для повседневной носки', name: 'Жилетка загадочное', cat: 'clothes', sub: 'outer', photos: ['data:image/png;base64,AA=='], row: '1', shopNum: '1', shopName: 'Тест', phone: '+992 90 123 45 67', contact: 'both', ways: ['phone', 'wa'] });
   assert.equal(created.status, 200);
   const id = created.value.id;
   assert.deepEqual(created.value.ways, ['phone', 'wa']);
@@ -129,7 +129,7 @@ test('API privacy on owner/buyer/anonymous paths; legacy Telegram removed withou
     const r = await fetch(apiBase+path, {method, headers:{authorization:'Bearer '+token,'content-type':'application/json'}, body:body?JSON.stringify(body):undefined});
     return {status:r.status, value:await r.json()};
   }
-  const made = await api('/listings','test-seller','POST',{name:'Двойка флис',cat:'clothes',photos:['data:image/png;base64,AA=='],row:'1',shopNum:'1',shopName:'Тест',phone:'+992 90 123 45 67',ways:['tg','wa','phone','wa'],contact:'tg'});
+  const made = await api('/listings','test-seller','POST',{desc:'Качественная двойка из мягкого флиса для повседневной носки',name:'Двойка флис',cat:'clothes',photos:['data:image/png;base64,AA=='],row:'1',shopNum:'1',shopName:'Тест',phone:'+992 90 123 45 67',ways:['tg','wa','phone','wa'],contact:'tg'});
   assert.equal(made.status,200); const id = made.value.id;
   assert.deepEqual(made.value.ways,['wa','phone']); assert.equal(made.value.contact,'both'); assertPrivate(made.value);
   for (const token of ['test-seller','test-buyer','']) {
