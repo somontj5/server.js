@@ -309,15 +309,20 @@ function bump(l, k) { if (!l) return; l.st = l.st || {}; const d = dayKey(); con
   const ks = Object.keys(l.st); if (ks.length > 60) { ks.sort(); delete l.st[ks[0]]; } }
 function favRecount() { const c = {}; for (const u of Object.values(db.users)) for (const id of (u.favs||[])) c[id] = (c[id]||0) + 1; for (const l of Object.values(db.listings)) l.favCount = c[l.id] || 0; }
 favRecount();
+function contactWays(l) {
+  const ways = Array.isArray(l.ways) ? l.ways : ({ both:['phone','wa'], phone:['phone'], wa:['wa'] }[l.contact] || []);
+  return [...new Set(ways.filter(w => w === 'phone' || w === 'wa'))];
+}
 function listingOut(l, full) {
   const s = db.users[l.sellerId] || {};
-  const o = Object.assign({}, l, { top: isTop(l), seller: pubUser(s), shareUrl: shareUrl(l.id) }); delete o.tags; delete o.st; o.favCount = l.favCount || 0; o.views = l.views || 0; delete o.ai; delete o.aiAt; delete o.aiSub; delete o.aiGender; delete o.aiSeason; delete o.aiVersion; delete o.unknownCounted;
+  // Tagging is internal: never return training/debug fields, even to the owner.
+  const o = Object.assign({}, l, { top: isTop(l), seller: pubUser(s), shareUrl: shareUrl(l.id) });
+  for (const k of ['tags','atags','tt','tu','nu','mtags','hideTags','ai','ai2','aiAt','aiSub','aiGender','aiSeason','aiVersion','aiModel','unknownCounted','st']) delete o[k];
+  o.favCount = l.favCount || 0; o.views = l.views || 0;
   if (!full) { o.photo = l.photos[0] || null; o.photoCount = l.photos.length; delete o.photos; delete o.desc; }
-  const vt = (l.tt || TAGS.visible(l) || []).filter(t => !(l.hideTags || []).includes(t)).slice(0, 8);
-  o.atags = vt; o.hideTags = l.hideTags || []; o.tu = full ? (l.tu || []) : undefined; if (o.tu === undefined) delete o.tu;
-  o.ways = Array.isArray(l.ways) ? l.ways : ({ both:['phone','wa'], phone:['phone'], wa:['wa'], tg:['tg'] }[l.contact] || []);
-  if (!(o.ways.length || l.contact === 'both' || l.contact === 'phone' || l.contact === 'wa' || l.contact === 'tg')) o.phone = '';
-  else o.phone = l.phone || s.phone || '';
+  o.ways = contactWays(l);
+  o.contact = o.ways.includes('phone') && o.ways.includes('wa') ? 'both' : (o.ways[0] || 'chat');
+  o.phone = o.ways.length ? (l.phone || s.phone || '') : '';
   return o;
 }
 const lev1 = (a, b) => { if (Math.abs(a.length - b.length) > 1) return false; let i = 0, j = 0, e = 0; while (i < a.length && j < b.length) { if (a[i] === b[j]) { i++; j++; continue; } if (++e > 1) return false; if (a.length > b.length) i++; else if (b.length > a.length) j++; else { i++; j++; } } return e + (a.length - i) + (b.length - j) <= 1; };
@@ -361,8 +366,8 @@ function cleanListing(b, l) {
   if (b.sub !== undefined) l.sub = SUBS.includes(b.sub) ? b.sub : '';
   if (b.a && typeof b.a === 'object') { l.a = {}; for (const k in b.a) if (ATTR[k]) l.a[k] = str(b.a[k], 30); if (l.a.made && !MADE.includes(l.a.made)) delete l.a.made; }
   if (b.material !== undefined) l.material = str(b.material, 60); // материал товара (понятное название: «Хлопок», «Натуральная кожа» и т.п.)
-  if (Array.isArray(b.ways)) l.ways = [...new Set(b.ways.filter(x => ['phone','wa','tg'].includes(x)))];
-  if (b.contact !== undefined) l.contact = ['chat','both','phone','wa','tg'].includes(b.contact) ? b.contact : 'chat';
+  if (Array.isArray(b.ways)) l.ways = [...new Set(b.ways.filter(x => ['phone','wa'].includes(x)))];
+  if (b.contact !== undefined) l.contact = ['chat','both','phone','wa'].includes(b.contact) ? b.contact : 'chat';
   if (Array.isArray(b.photos)) l.photos = b.photos.filter(p => typeof p === 'string' && (p.startsWith('data:image/') || p.startsWith('http'))).slice(0, 16);
   if (b.tags !== undefined) l.mtags = str(b.tags, 300);   // необязательные теги продавца
   if (b.hideTags !== undefined) l.hideTags = Array.isArray(b.hideTags) ? b.hideTags.map(x => str(x, 40)).filter(Boolean).slice(0, 20) : [];
@@ -410,7 +415,8 @@ route('GET', '/ig/:name', 0, async (q, b, u, r, p) => { const un = igNorm(p.name
 route('GET', '/users/:id', 0, (q, b, u, r, p) => pubUser(db.users[p.id]) || need(404, 'Нет пользователя'));
 
 // --- Теги: словарь (правится без кода) и «неизвестные» слова ---
-route('GET', '/tags', 0, () => ({ dict: TAGS.DICT(), count: TAGS.allowed().length, ai: { mode: 'github-actions', configured: !!AI_WORKER_TOKEN, ...aiStatus } }));
+const requireAdmin = u => { if (!u || !u.admin) need(403, 'Только для админа'); };
+route('GET', '/tags', 1, (q, b, u) => { requireAdmin(u); return ({ dict: TAGS.DICT(), count: TAGS.allowed().length, ai: { mode: 'github-actions', configured: !!AI_WORKER_TOKEN, ...aiStatus } }); });
 // Служебный доступ: отдельный HMAC-токен, а не пользовательская сессия или API-ключ Gemini.
 function workerAuth(req) {
   const provided = Buffer.from((req.headers.authorization || '').replace(/^Bearer\s+/i, ''));
@@ -447,11 +453,11 @@ route('POST', '/internal/ai/results', 0, (q, b, u, req) => {
   touch(); flush();
   return { applied, stale };
 });
-route('GET', '/tags/unknown', 0, (q) => ({   // что добавить в словарь: частые слова, которых нет в tags.json
+route('GET', '/tags/unknown', 1, (q, b, u) => { requireAdmin(u); return ({   // что добавить в словарь: частые слова, которых нет в tags.json
   items: Object.entries(db.unknown || {}).sort((a, b) => b[1].c - a[1].c).slice(0, Math.min(+q.limit || 100, 500))
     .map(([w, r]) => ({ word: w, count: r.c, last: r.t, ai: !!r.ai }))
-}));
-route('GET', '/tags/resolve', 0, (q) => {   // предпросмотр: что система поймёт в тексте
+}); });
+route('GET', '/tags/resolve', 1, (q, b, u) => { requireAdmin(u);   // предпросмотр: что система поймёт в тексте
   const r = TAGS.layer2(String(q.text || q.q || ''));
   return { tags: r.tags, unknown: r.unknown, visible: r.tags.slice(0, 8) };
 });

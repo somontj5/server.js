@@ -96,13 +96,55 @@ test('Live isolated API: auth, synonyms, version conflicts, idempotency, hiding,
   assert.equal((await api('/internal/ai/results', 'POST', { results: [result] }, 'test-worker')).value.applied, 1);
   assert.equal((await api('/internal/ai/results', 'POST', { results: [result] }, 'test-worker')).value.applied, 0);
   const listing = (await api('/listings/' + id)).value;
-  assert.ok(!listing.atags.includes('invented')); assert.ok(listing.atags.includes('Китай'));
-  assert.ok(listing.atags.includes('флис'));
+  assertPrivate(listing);
+  for (const q of ['Китай','флис']) assert.ok((await api('/listings?q='+encodeURIComponent(q))).value.items.some(l => l.id === id));
   await api('/listings/' + id + '/tag-hide', 'POST', { tag: 'флис' });
-  assert.ok(!(await api('/listings/' + id)).value.atags.includes('флис'));
-  const unknown = (await api('/tags/unknown')).value.items;
+  assertPrivate((await api('/listings/' + id)).value);
+  assert.ok(!(await api('/listings?q='+encodeURIComponent('флис'))).value.items.some(l => l.id === id));
+  const unknown = (await api('/tags/unknown', 'GET', null, 'test-admin')).value.items;
   assert.equal(unknown.find(w => w.word === 'загадочное').count, 1);
   assert.ok(!unknown.some(w => w.word === 'invented'));
   assert.ok(!(await api('/internal/ai/jobs', 'GET', null, 'test-worker')).value.jobs.some(l => l.id === id));
-  assert.equal((await api('/tags')).value.ai.state, 'ok');
+  assert.equal((await api('/tags', 'GET', null, 'test-admin')).value.ai.state, 'ok');
+});
+
+function assertPrivate(listing) {
+  for (const k of ['tags','atags','tt','tu','nu','mtags','hideTags','ai','ai2','aiVersion','aiModel','unknownCounted'])
+    assert.ok(!(k in listing), 'Leaked field: ' + k);
+}
+test('Client: no seller tag UI or Telegram contact/share, legacy ways sanitized', () => {
+  const html = fs.readFileSync('android-src/assets/www/index.html', 'utf8');
+  for (const text of ['id="tagPrev"','id="aiTags"','data-k="tags"','Теги товара','Написать в Telegram','https://t.me/+','data-m="tg"']) assert.ok(!html.includes(text), text);
+  assert.ok(html.includes('Войти через Telegram'));
+  const context = vm.createContext({});
+  vm.runInContext(html.slice(html.indexOf('function contactWays('), html.indexOf('function motionScroll(')), context);
+  for (const [input, expected] of [[{ways:['wa','tg','phone','wa']},['wa','phone']], [{contact:'tg'},[]], [{contact:'both'},['phone','wa']], [{ways:[],contact:'both'},[]]]) {
+    assert.deepEqual(Array.from(context.contactWays(input)), expected);
+  }
+  assert.ok(html.includes('behavior:motionScroll()'));
+  assert.ok(html.includes('animation:none!important;transition:none!important;scroll-behavior:auto!important'));
+});
+test('API privacy on owner/buyer/anonymous paths; legacy Telegram removed without enabling WhatsApp', { skip: !apiBase }, async () => {
+  async function api(path, token = 'test-seller', method = 'GET', body) {
+    const r = await fetch(apiBase+path, {method, headers:{authorization:'Bearer '+token,'content-type':'application/json'}, body:body?JSON.stringify(body):undefined});
+    return {status:r.status, value:await r.json()};
+  }
+  const made = await api('/listings','test-seller','POST',{name:'Двойка флис',cat:'clothes',photos:['data:image/png;base64,AA=='],row:'1',shopNum:'1',shopName:'Тест',phone:'+992 90 123 45 67',ways:['tg','wa','phone','wa'],contact:'tg'});
+  assert.equal(made.status,200); const id = made.value.id;
+  assert.deepEqual(made.value.ways,['wa','phone']); assert.equal(made.value.contact,'both'); assertPrivate(made.value);
+  for (const token of ['test-seller','test-buyer','']) {
+    assertPrivate((await api('/listings/'+id,token)).value);
+    for (const path of ['/listings','/listings?seller=me','/recs','/listings/'+id+'/similar']) {
+      const r = await api(path,token); assert.equal(r.status,200); r.value.items.forEach(assertPrivate);
+    }
+    for (const path of ['/tags','/tags/unknown','/tags/resolve?text=флис']) assert.equal((await api(path,token)).status,token?403:401);
+  }
+  const changed = await api('/listings/'+id,'test-seller','PUT',{ways:['tg'],contact:'tg'});
+  assert.deepEqual(changed.value.ways,[]); assert.equal(changed.value.phone,''); assert.equal(changed.value.contact,'chat');
+  const legacy = (await api('/listings/legacy-tg')).value;
+  assert.deepEqual(legacy.ways,[]); assert.equal(legacy.phone,''); assert.equal(legacy.contact,'chat');
+  const optedOut = (await api('/listings/legacy-optout')).value;
+  assert.deepEqual(optedOut.ways,[]); assert.equal(optedOut.phone,'');
+  const waOnly = (await api('/listings/legacy-wa')).value;
+  assert.deepEqual(waOnly.ways,['wa']); assert.ok(waOnly.phone);
 });
