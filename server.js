@@ -14,6 +14,7 @@ const TOKEN = process.env.BOT_TOKEN || '';
 const PUB = process.env.PUBLIC_URL || '';
 const DB_FILE = process.env.DB_FILE || 'data/db.json';
 const Catalog = require('./android-src/assets/www/categories.js');
+const Sizes = require('./android-src/assets/www/sizes.js');
 const CATS = ['transport','realty','electronics','clothes','home','animals','food','other'];
 
 let db = { users:{}, sessions:{}, codes:{}, listings:{}, threads:{}, reviews:[], searches:{} };
@@ -133,7 +134,7 @@ const SYN = {
 };
 const W2S = []; for (const k in SYN) for (const r of SYN[k].split(' ')) W2S.push([r, k]);
 const subOf = w => { for (const [r, k] of W2S) if (w.startsWith(r) || (w.length >= 5 && r.startsWith(w))) return k; return null; };
-const ATTR = { gender:1, age:1, color:1, season:1, size:1, mat:1, style:1, cond:1, made:1 }; // made — страна производства
+const ATTR = { gender:1, age:1, ageGroup:1, color:1, season:1, size:1, mat:1, style:1, cond:1, made:1 }; // made — страна производства
 const BAZAARS = ['Саховат', 'Атуш', 'Сомон'], MADE = ['Китай', 'Узбекистан', 'Турция'];
 const bazOf = v => BAZAARS.includes(String(v || '').trim()) ? String(v).trim() : '';
 function priceTag(p) { const n = priceNum(p); if (n == null) return null; return 'p:' + (n < 500 ? 0 : n < 2000 ? 1 : n < 10000 ? 2 : n < 50000 ? 3 : 4); }
@@ -168,6 +169,7 @@ function makeTags(l) {
   if (l.section) t.add('d:' + l.section);
   for (const w of words(l.name)) { const g = subOf(w); if (g) t.add('g:' + g); }       // «Худи оверсайз» → g:knit, даже если подкатегория не указана
   const a = l.a || {}; for (const k in a) if (ATTR[k] && a[k] && a[k] !== 'Без размера') t.add('a:' + k + ':' + String(a[k]).toLowerCase());
+  for (const e of Sizes.read(l).entries) for (const v of e.values) t.add('z:' + e.system + ':' + v);
   (l.ai || []).forEach(x => { t.add('x:' + x); words(x).forEach(w => t.add('w:' + w)); });
   if (l.aiSub) t.add('g:' + l.aiSub); if (l.aiGender) t.add('a:gender:' + l.aiGender); if (l.aiSeason) t.add('a:season:' + l.aiSeason);
   for (const w of words(l.desc).slice(0, 30)) { const g = subOf(w); if (g && !l.sub) t.add('g:' + g); }                                            // теги от Gemini (если включён)
@@ -356,6 +358,9 @@ function matches(l, s) {
   if (s.cat && s.cat !== 'all' && l.cat !== s.cat) return false;
   if (s.sub && l.sub !== s.sub) return false;
   if (s.section && l.section !== s.section) return false;
+  if (s.ageGroup && Sizes.context(l).kids !== (s.ageGroup === 'Детское')) return false;
+  if (s.gender && (l.a || {}).gender !== s.gender && (l.a || {}).gender !== 'Унисекс') return false;
+  if (s.sizes && !Sizes.rank(l, s.sizes)) return false;
   if (s.q) { const qs = words(s.q), keys = TAGS.queryTags(s.q); if (qs.length && !relevance(l, qs, s.q)) return false; if (!qs.length && keys.length && !keys.some(k => (l.tags || makeTags(l)).includes(k))) return false; }
   const p = priceNum(l.price), a = parseFloat(s.min), b = parseFloat(s.max);
   if (!isNaN(a) || !isNaN(b)) { if (p == null) return false; if (!isNaN(a) && p < a) return false; if (!isNaN(b) && p > b) return false; }
@@ -380,6 +385,8 @@ function cleanListing(b, l) {
     l.section = b.section || '';
   }
   if (b.a && typeof b.a === 'object') { l.a = {}; for (const k in b.a) if (ATTR[k]) l.a[k] = str(b.a[k], 30); if (l.a.made && !MADE.includes(l.a.made)) delete l.a.made; }
+  if (l.a && l.a.ageGroup && !['Взрослое','Детское'].includes(l.a.ageGroup)) need(400, 'Выберите возрастную группу');
+  if (l.a && l.a.gender && !['Женское','Мужское','Унисекс','Детское'].includes(l.a.gender)) need(400, 'Выберите для кого товар');
   if (b.material !== undefined) l.material = str(b.material, 60); // материал товара (понятное название: «Хлопок», «Натуральная кожа» и т.п.)
   if (Array.isArray(b.ways)) l.ways = [...new Set(b.ways.filter(x => ['phone','wa'].includes(x)))];
   if (b.contact !== undefined) l.contact = ['chat','both','phone','wa'].includes(b.contact) ? b.contact : 'chat';
@@ -387,6 +394,13 @@ function cleanListing(b, l) {
   if (b.tags !== undefined) l.mtags = str(b.tags, 300);   // необязательные теги продавца
   if (b.hideTags !== undefined) l.hideTags = Array.isArray(b.hideTags) ? b.hideTags.map(x => str(x, 40)).filter(Boolean).slice(0, 20) : [];
   if (l.cat === 'clothes') Object.assign(l, Catalog.normalize(l));
+  if (b.sizes !== undefined) {
+    try { l.sizes = Sizes.clean(b.sizes, l); } catch (e) { need(400, e.message); }
+    if (Sizes.options(l).required && !Sizes.has(l.sizes)) need(400, 'Выберите размер или единый размер');
+    l.a = Object.assign({}, l.a, {size: Sizes.label(l.sizes)});
+  } else if (l.sizes && (b.sub !== undefined || b.section !== undefined || b.a !== undefined)) {
+    try { l.sizes = Sizes.clean(l.sizes, l); } catch { need(400, 'Обновите размеры для выбранной категории'); }
+  }
   return l;
 }
 function threadOut(t, uid) {
@@ -496,6 +510,8 @@ route('DELETE', '/listings/:id/tag-hide/:tag', 1, (q, b, u, r, p) => {   // ве
 });
 // --- Объявления ---
 route('GET', '/listings', 0, (q, b, u) => {
+  if (q.sizes) { try { q.sizes = Sizes.query(q.sizes); } catch (e) { need(400, e.message); } }
+  else if (q.size) { const ctx = {cat:q.sub || (q.cat === 'clothes' ? '' : q.cat),section:q.section,a:{gender:q.gender,ageGroup:q.ageGroup}}; q.sizes = Sizes.parse(q.size, ctx); if (!Sizes.has(q.sizes)) need(400, 'Укажите категорию и корректный размер'); }
   let arr = Object.values(db.listings);
   if (q.seller) { arr = arr.filter(l => l.sellerId === (q.seller === 'me' && u ? u.id : q.seller)); if (q.archived !== undefined) arr = arr.filter(l => !!l.archived === (q.archived === '1')); else if (!(u && q.seller === 'me')) arr = arr.filter(l => !l.archived); }
   else { let qq = q, all = arr; arr = all.filter(l => matches(l, qq));
@@ -509,6 +525,7 @@ route('GET', '/listings', 0, (q, b, u) => {
   else if (s === 'exp') arr.sort((a,b) => (priceNum(b.price) ?? -1) - (priceNum(a.price) ?? -1));
   else if (q.seller) arr.sort((a,b) => b.createdAt - a.createdAt);
   else if (!ranked) arr = recommend(arr, u);
+  if (q.sizes) arr.sort((a,b) => Sizes.rank(b, q.sizes) - Sizes.rank(a, q.sizes));
   const off = +q.offset || 0, lim = Math.min(+q.limit || 40, 300);
   return { total: arr.length, fixedQ: fixedQ || undefined, items: arr.slice(off, off + lim).map(l => listingOut(l)) };
 });
@@ -533,11 +550,13 @@ route('GET', '/listings/:id/similar', 0, (q, b, u, r, p) => {
   const candidates = Object.values(db.listings).filter(x => !x.archived && x.id !== l.id && !hidden.has(x.id));
   const recOrder = new Map(recommend(candidates, u).map((x, i) => [x.id, i]));
   const ranked = candidates.map(x => {
+    if (Sizes.context(l).kids !== Sizes.context(x).kids) return null;
     let score = 0, semantic = 0;
     for (const tag of (x.tags || makeTags(x))) if (baseTags.has(tag)) {
       if (tag.startsWith('k:') && !['Одежда','Другое','взрослое','детское','женское','мужское','унисекс'].includes(tag.slice(2))) { score += 2; semantic++; }
       if (tag.startsWith('w:') && baseWords.has(tag.slice(2))) { score += 2; semantic++; }
       if (tag.startsWith('a:')) score += 0.35;
+      if (tag.startsWith('z:')) score += 0.5;
     }
     const sameGroup = !!l.sub && l.sub !== 'other' && x.sub === l.sub;
     if (!sameGroup && !semantic) return null; // never match on seller/price/gender alone

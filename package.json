@@ -1,1 +1,1 @@
-{"name":"glassmarket-server","version":"1.0.0","private":true,"main":"server.js","scripts":{"start":"node server.js"},"engines":{"node":">=20"}}
+{"name":"glassmarket-server","version":"1.0.0","private":true,"main":"server.js","scripts":{"start":"node server.js","test":"node --test test-sizes.js","test:browser":"node test-browser.js"},"engines":{"node":">=20"}}
