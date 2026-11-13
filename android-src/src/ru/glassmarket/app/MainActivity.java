@@ -1,7 +1,7 @@
 package ru.glassmarket.app;
 import android.app.Activity;import android.content.*;import android.net.Uri;import android.os.*;import android.webkit.*;import android.view.View;
 public class MainActivity extends Activity {
-  static final int FC=1;static boolean visible=false;boolean ready=false;String pendingListing,pendingTid;WebView w;ValueCallback<Uri[]> cb;PermissionRequest pr;
+  static final int FC=1,SAVE_IMAGE=2;byte[] imageToSave;static boolean visible=false;boolean ready=false;String pendingListing,pendingTid;WebView w;ValueCallback<Uri[]> cb;PermissionRequest pr;
   @Override protected void onCreate(Bundle b){super.onCreate(b);
     w=new WebView(this);WebSettings s=w.getSettings();s.setJavaScriptEnabled(true);s.setDomStorageEnabled(true);s.setAllowFileAccess(true);s.setTextZoom(100);s.setMediaPlaybackRequiresUserGesture(false);
     w.setBackgroundColor(0xffffffff);w.addJavascriptInterface(new Bridge(this),"Android");
@@ -33,7 +33,20 @@ public class MainActivity extends Activity {
   }
   @Override protected void onResume(){super.onResume();visible=true;MsgService.cancelAll(this);}
   @Override protected void onPause(){super.onPause();visible=false;MsgService.start(this);}
+  void imageToast(final String text){runOnUiThread(new Runnable(){public void run(){android.widget.Toast.makeText(MainActivity.this,text,android.widget.Toast.LENGTH_SHORT).show();}});}
+  void saveImage(final byte[] bytes,final String mime){runOnUiThread(new Runnable(){public void run(){
+    if(imageToSave!=null){imageToast("Сначала завершите сохранение фото");return;}
+    imageToSave=bytes;Intent i=new Intent(Intent.ACTION_CREATE_DOCUMENT);i.addCategory(Intent.CATEGORY_OPENABLE);i.setType(mime);
+    i.putExtra(Intent.EXTRA_TITLE,"GlassMarket_"+System.currentTimeMillis()+("image/jpeg".equals(mime)?".jpg":"image/png".equals(mime)?".png":".webp"));
+    try{startActivityForResult(i,SAVE_IMAGE);}catch(Exception e){imageToSave=null;imageToast("Не удалось открыть сохранение фото");}
+  }});}
   @Override protected void onActivityResult(int rq,int rs,Intent d){
+    if(rq==SAVE_IMAGE){final byte[] bytes=imageToSave;imageToSave=null;
+      if(rs==RESULT_OK&&d!=null&&d.getData()!=null&&bytes!=null){final Uri uri=d.getData();new Thread(new Runnable(){public void run(){
+        try(java.io.OutputStream out=getContentResolver().openOutputStream(uri)){if(out==null)throw new java.io.IOException();out.write(bytes);out.flush();imageToast("Фото сохранено");}
+        catch(Exception e){imageToast("Не удалось сохранить фото");}
+      }}).start();}return;}
+
     if(rq==FC&&cb!=null){Uri[] r=null;if(rs==RESULT_OK&&d!=null){if(d.getClipData()!=null){int n=d.getClipData().getItemCount();r=new Uri[n];for(int k=0;k<n;k++)r[k]=d.getClipData().getItemAt(k).getUri();}else if(d.getData()!=null)r=new Uri[]{d.getData()};}
       cb.onReceiveValue(r);cb=null;return;}super.onActivityResult(rq,rs,d);}
   @Override public void onRequestPermissionsResult(int rq,String[] p,int[] g){super.onRequestPermissionsResult(rq,p,g);
