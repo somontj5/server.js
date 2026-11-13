@@ -32,7 +32,7 @@ const str = (v, max=200) => (v == null ? '' : String(v)).trim().slice(0, max);
 const priceNum = p => { const m = String(p||'').replace(/\s/g,'').match(/\d+([.,]\d+)?/); return m ? parseFloat(m[0].replace(',','.')) : null; };
 // Таджикистан: +992 и ровно 9 цифр; ряд и магазин — только цифры
 const onlyDigits = v => String(v == null ? '' : v).replace(/\D/g, '');
-function tjPhone(v) { let d = onlyDigits(v); if (!d) return ''; if (d.startsWith('992')) d = d.slice(3); if (d.length !== 9) need(400, 'Номер телефона: +992 и 9 цифр'); return '+992 ' + d.slice(0,2) + ' ' + d.slice(2,5) + ' ' + d.slice(5,7) + ' ' + d.slice(7); }
+function tjPhone(v) { let d = onlyDigits(v); if (!d) return ''; if (d.length === 12 && d.startsWith('992')) d = d.slice(3); if (d.length !== 9) need(400, 'Номер телефона: +992 и 9 цифр'); return '+992 ' + d.slice(0,2) + ' ' + d.slice(2,5) + ' ' + d.slice(5,7) + ' ' + d.slice(7); }
 const isTop = l => l.boostedUntil && l.boostedUntil > now();
 
 /* ================= Telegram ================= */
@@ -386,7 +386,7 @@ function cleanListing(b, l) {
   if (b.bazaar !== undefined) l.bazaar = bazOf(b.bazaar);
   if (b.row !== undefined) l.row = onlyDigits(b.row).slice(0, 4);
   if (b.shopNum !== undefined) l.shopNum = onlyDigits(b.shopNum).replace(/^0+/, '').slice(0, 4); // контейнер 1..9999
-  if (b.phone !== undefined) { try { l.phone = tjPhone(b.phone); } catch { l.phone = ''; } } // старые номера (не +992) просто сбрасываем
+  if (b.phone !== undefined) l.phone = tjPhone(b.phone); // Invalid numbers must not silently disappear.
   if (b.desc !== undefined) l.desc = Validation.clean(b.desc);
   if (b.sub !== undefined) {
     if (!SUBS.includes(b.sub) && b.sub !== '') need(400, 'Неизвестная категория');
@@ -452,9 +452,10 @@ route('POST', '/auth/logout', 1, (q, b, u, req) => { delete db.sessions[req.toke
 // --- Профиль ---
 route('GET', '/me', 1, (q, b, u) => meUser(u));
 route('PUT', '/me', 1, async (q, b, u) => { for (const [key,kind] of [['name','person'],['shopName','shop']]) { if (b[key] !== undefined && (key === 'name' || b[key])) { const error = Validation.error(kind,b[key]); if (error) need(400,error); } } if (b.ig) { const g = igNorm(b.ig); if (g && g !== u.ig) { if (!IGC[g] || IGC[g].ex == null) await igLoad(g); if (IGC[g] && IGC[g].ex === false) need(400, 'Instagram-аккаунт @' + g + ' не найден'); } }
+  const profilePhone = b.phone !== undefined ? tjPhone(b.phone) : u.phone;
   ['name','shopName'].forEach(k => { if (b[k] !== undefined) u[k] = str(b[k], 60); });
   if (b.bazaar !== undefined) u.bazaar = bazOf(b.bazaar);
-  if (b.row !== undefined) u.row = onlyDigits(b.row).slice(0, 4); if (b.shopNum !== undefined) { const sn = onlyDigits(b.shopNum).replace(/^0+/, '').slice(0, 4); checkShop(sn, u.id, u.shopNum); u.shopNum = sn; } if (b.phone !== undefined) u.phone = tjPhone(b.phone); if (b.about !== undefined) u.about = str(b.about, 200); if (b.ig !== undefined) { u.ig = igNorm(b.ig); if (u.ig) igLoad(u.ig); } if (b.avatar !== undefined) { if (!b.avatar) { delete u.avatar; } else { if (!/^data:image\/(jpeg|png|webp);base64,/.test(b.avatar) || b.avatar.length > 400e3) need(400, 'Фото слишком большое'); u.avatar = b.avatar; u.avTs = now(); } } touch(); return meUser(u); });
+  if (b.row !== undefined) u.row = onlyDigits(b.row).slice(0, 4); if (b.shopNum !== undefined) { const sn = onlyDigits(b.shopNum).replace(/^0+/, '').slice(0, 4); checkShop(sn, u.id, u.shopNum); u.shopNum = sn; } if (b.phone !== undefined) u.phone = profilePhone; if (b.about !== undefined) u.about = str(b.about, 200); if (b.ig !== undefined) { u.ig = igNorm(b.ig); if (u.ig) igLoad(u.ig); } if (b.avatar !== undefined) { if (!b.avatar) { delete u.avatar; } else { if (!/^data:image\/(jpeg|png|webp);base64,/.test(b.avatar) || b.avatar.length > 400e3) need(400, 'Фото слишком большое'); u.avatar = b.avatar; u.avTs = now(); } } touch(); return meUser(u); });
 route('GET', '/ig/:name', 0, async (q, b, u, r, p) => { const un = igNorm(p.name); if (!un) need(400, 'Пустой ник'); if (!IGC[un] || !IGC[un].d) await igLoad(un); return { ig: un, exists: IGC[un] ? (IGC[un].ex === undefined ? null : IGC[un].ex) : null, igInfo: igPub(un) }; });
 route('GET', '/users/:id', 0, (q, b, u, r, p) => pubUser(db.users[p.id]) || need(404, 'Нет пользователя'));
 
@@ -665,9 +666,16 @@ route('GET', '/threads/:id', 1, (q, b, u, r, p) => {
   return Object.assign(threadOut(t, u.id), { pin: t.pin || null, otherRead: (me ? t.rS : t.rB) || 0,
     messages: t.messages.filter(m => m.t > since || (m.u || 0) > since).map(m => msgOut(m, u.id)) });
 });
+route('GET', '/threads/:id/messages/:mid/photo', 1, (q, b, u, r, p) => {
+  const t = myThread(p, u), m = myMsg(t, p.mid, u);
+  if (m.del || !m.img) need(404, 'Фото недоступно');
+  return { img: m.img };
+});
 const MEDIA = (v, re, max) => typeof v === 'string' && re.test(v) && v.length <= max ? v : '';
 route('POST', '/threads/:id/messages', 1, (q, b, u, r, p) => {
   const t = myThread(p, u), text = str(b.text, 2000), img = MEDIA(b.img, /^data:image\/(jpeg|png|webp);base64,/, 900e3), voice = MEDIA(b.voice, /^data:audio\/[\w.+-]+(;codecs=[\w]+)?;base64,/, 1.5e6);
+  if (b.img && !img) need(400, 'Фото повреждено или больше 900 КБ');
+  if (b.voice && !voice) need(400, 'Голосовое повреждено или слишком большое');
   if (!text && !img && !voice) need(400, 'Пустое сообщение');
   const m = { id: rid(4), from: u.id, text, t: now() }; if (b.listingId && db.listings[b.listingId]) m.lid = String(b.listingId);
   if (img) m.img = img; if (voice) { m.voice = voice; m.dur = Math.min(600, Math.max(0, +b.dur || 0)); }
@@ -802,10 +810,10 @@ http.createServer((req, res) => {
   if (lm) {
     const l = db.listings[lm[1]], esc = v => String(v || '').replace(/[&<>"]/g, c => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;' })[c]);
     const appLink = 'glassmarket://listing/' + encodeURIComponent(lm[1]);
-    const download = 'https://github.com/somontj5/server.js/raw/main/apk/GlassMarket9.13.apk';
+    const download = 'https://github.com/somontj5/server.js/raw/main/apk/GlassMarket9.14.apk';
     const intent = 'intent://listing/' + encodeURIComponent(lm[1]) + '#Intent;scheme=glassmarket;package=ru.glassmarket.app;S.browser_fallback_url=' + encodeURIComponent(download) + ';end';
     const html = l && !l.archived ? `<!doctype html><meta charset=utf-8><meta name=viewport content="width=device-width,initial-scale=1"><title>${esc(l.name)}</title><meta property="og:title" content="${esc(l.name + ' — ' + (l.price||''))}"><meta property="og:description" content="${esc('Ряд ' + l.row + ', магазин №' + l.shopNum)}">
-<body style="font-family:sans-serif;max-width:520px;margin:auto;padding:12px">${l.photos[0] ? `<img src="/l/${esc(l.id)}/photo" style="width:100%;border-radius:12px">` : ''}<h2>${esc(l.name)}</h2><h3>${esc(l.price || 'цена не указана')}</h3><p>📍 ${l.bazaar ? 'Базар ' + esc(l.bazaar) + ', ' : ''}Ряд ${esc(l.row)}, магазин №${esc(l.shopNum)} (${esc(l.shopName)})</p>${l.material ? `<p>🧵 Материал: ${esc(l.material)}</p>` : ''}<p style="white-space:pre-wrap">${esc(l.desc)}</p><a id="openApp" href="${esc(intent)}" style="display:block;text-align:center;background:#00aaff;color:#fff;padding:14px;border-radius:12px;text-decoration:none">Открыть в СтеклоМаркет</a><p style="text-align:center"><a href="${download}">Скачать приложение 9.13</a></p><p style="color:#777;font-size:13px">Если приложение не открылось автоматически, нажмите кнопку выше.</p><script>if(/Android/i.test(navigator.userAgent))location.href=${JSON.stringify(appLink)};</script></body>`
+<body style="font-family:sans-serif;max-width:520px;margin:auto;padding:12px">${l.photos[0] ? `<img src="/l/${esc(l.id)}/photo" style="width:100%;border-radius:12px">` : ''}<h2>${esc(l.name)}</h2><h3>${esc(l.price || 'цена не указана')}</h3><p>📍 ${l.bazaar ? 'Базар ' + esc(l.bazaar) + ', ' : ''}Ряд ${esc(l.row)}, магазин №${esc(l.shopNum)} (${esc(l.shopName)})</p>${l.material ? `<p>🧵 Материал: ${esc(l.material)}</p>` : ''}<p style="white-space:pre-wrap">${esc(l.desc)}</p><a id="openApp" href="${esc(intent)}" style="display:block;text-align:center;background:#00aaff;color:#fff;padding:14px;border-radius:12px;text-decoration:none">Открыть в СтеклоМаркет</a><p style="text-align:center"><a href="${download}">Скачать приложение 9.14</a></p><p style="color:#777;font-size:13px">Если приложение не открылось автоматически, нажмите кнопку выше.</p><script>if(/Android/i.test(navigator.userAgent))location.href=${JSON.stringify(appLink)};</script></body>`
       : '<!doctype html><meta charset=utf-8><h3 style="font-family:sans-serif">Объявление снято с публикации</h3>';
     res.writeHead(l && !l.archived ? 200 : 404, { 'content-type': 'text/html; charset=utf-8', 'cache-control':'no-store', 'x-content-type-options':'nosniff' }); return res.end(html);
   }
