@@ -22,7 +22,7 @@ let db = { users:{}, sessions:{}, codes:{}, listings:{}, threads:{}, reviews:[],
 try { Object.assign(db, JSON.parse(fs.readFileSync(DB_FILE, 'utf8'))); console.log('БД загружена'); } catch {}
 let dirty = false;
 const touch = () => { dirty = true; };
-function flush() { if (!dirty) return; fs.mkdirSync('data', { recursive:true }); fs.writeFileSync(DB_FILE, JSON.stringify(db)); dirty = false; }
+function flush() { if (!dirty) return; fs.mkdirSync(require('path').dirname(DB_FILE), { recursive:true }); const tmp = DB_FILE + '.tmp'; fs.writeFileSync(tmp, JSON.stringify(db), { mode:0o600 }); fs.renameSync(tmp, DB_FILE); dirty = false; }
 setInterval(flush, 3000);
 ['SIGINT','SIGTERM'].forEach(s => process.on(s, () => { dirty = true; flush(); process.exit(0); }));
 
@@ -434,6 +434,11 @@ route('GET', '/', 0, () => ({ ok:true, app:'GlassMarket', bot: BOT ? '@' + BOT :
 route('GET', '/health', 0, () => ({ ok:true }));
 route('GET', '/categories', 0, () => ({ items: Catalog.items }));
 
+// Separate namespace: legacy Telegram sessions/users remain unchanged.
+const waAuth = require('./whatsapp-auth')({ db, persist: () => { touch(); flush(); }, userOut: meUser });
+route('POST', '/auth/whatsapp/start', 0, (q,b,u,req) => waAuth.start(req));
+route('POST', '/auth/whatsapp/check', 0, (q,b,u,req) => waAuth.check(req,b));
+
 // --- Вход через Telegram ---
 route('POST', '/auth/start', 0, () => {
   if (!BOT) need(503, 'Бот не запущен');
@@ -797,7 +802,7 @@ function send(res, code, obj) {
   if (res.headersSent || res.writableEnded) return;
   const body = JSON.stringify(obj), ae = (res.req && res.req.headers['accept-encoding']) || '', gz = body.length > 1024 && /gzip/.test(ae);
   const h = { 'content-type':'application/json; charset=utf-8', 'access-control-allow-origin':'*', 'cache-control':'no-store',
-    'access-control-allow-headers':'content-type, authorization', 'access-control-allow-methods':'GET, POST, PUT, DELETE, OPTIONS' };
+    'access-control-allow-headers':'content-type, authorization, x-wa-session', 'access-control-allow-methods':'GET, POST, PUT, DELETE, OPTIONS' };
   if (gz) { h['content-encoding'] = 'gzip'; h.vary = 'accept-encoding'; }
   res.writeHead(code, h); res.end(gz ? require('zlib').gzipSync(body, { level: 4 }) : body);
 }
@@ -806,14 +811,15 @@ process.on('unhandledRejection', e => console.error('unhandled:', e));
 http.createServer((req, res) => {
   if (req.method === 'OPTIONS') return send(res, 204, {});
   const url = new URL(req.url, 'http://x'), q = Object.fromEntries(url.searchParams);
+  if (url.pathname === '/webhooks/whatsapp') return waAuth.webhook(req, res, url);
   const lm = req.method === 'GET' && url.pathname.match(/^\/l\/([\w-]+)$/);
   if (lm) {
     const l = db.listings[lm[1]], esc = v => String(v || '').replace(/[&<>"]/g, c => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;' })[c]);
     const appLink = 'glassmarket://listing/' + encodeURIComponent(lm[1]);
-    const download = 'https://github.com/somontj5/server.js/raw/main/apk/GlassMarket9.14.apk';
+    const download = 'https://github.com/somontj5/server.js/raw/main/apk/GlassMarket9.15.apk';
     const intent = 'intent://listing/' + encodeURIComponent(lm[1]) + '#Intent;scheme=glassmarket;package=ru.glassmarket.app;S.browser_fallback_url=' + encodeURIComponent(download) + ';end';
     const html = l && !l.archived ? `<!doctype html><meta charset=utf-8><meta name=viewport content="width=device-width,initial-scale=1"><title>${esc(l.name)}</title><meta property="og:title" content="${esc(l.name + ' — ' + (l.price||''))}"><meta property="og:description" content="${esc('Ряд ' + l.row + ', магазин №' + l.shopNum)}">
-<body style="font-family:sans-serif;max-width:520px;margin:auto;padding:12px">${l.photos[0] ? `<img src="/l/${esc(l.id)}/photo" style="width:100%;border-radius:12px">` : ''}<h2>${esc(l.name)}</h2><h3>${esc(l.price || 'цена не указана')}</h3><p>📍 ${l.bazaar ? 'Базар ' + esc(l.bazaar) + ', ' : ''}Ряд ${esc(l.row)}, магазин №${esc(l.shopNum)} (${esc(l.shopName)})</p>${l.material ? `<p>🧵 Материал: ${esc(l.material)}</p>` : ''}<p style="white-space:pre-wrap">${esc(l.desc)}</p><a id="openApp" href="${esc(intent)}" style="display:block;text-align:center;background:#00aaff;color:#fff;padding:14px;border-radius:12px;text-decoration:none">Открыть в СтеклоМаркет</a><p style="text-align:center"><a href="${download}">Скачать приложение 9.14</a></p><p style="color:#777;font-size:13px">Если приложение не открылось автоматически, нажмите кнопку выше.</p><script>if(/Android/i.test(navigator.userAgent))location.href=${JSON.stringify(appLink)};</script></body>`
+<body style="font-family:sans-serif;max-width:520px;margin:auto;padding:12px">${l.photos[0] ? `<img src="/l/${esc(l.id)}/photo" style="width:100%;border-radius:12px">` : ''}<h2>${esc(l.name)}</h2><h3>${esc(l.price || 'цена не указана')}</h3><p>📍 ${l.bazaar ? 'Базар ' + esc(l.bazaar) + ', ' : ''}Ряд ${esc(l.row)}, магазин №${esc(l.shopNum)} (${esc(l.shopName)})</p>${l.material ? `<p>🧵 Материал: ${esc(l.material)}</p>` : ''}<p style="white-space:pre-wrap">${esc(l.desc)}</p><a id="openApp" href="${esc(intent)}" style="display:block;text-align:center;background:#00aaff;color:#fff;padding:14px;border-radius:12px;text-decoration:none">Открыть в СтеклоМаркет</a><p style="text-align:center"><a href="${download}">Скачать приложение 9.15</a></p><p style="color:#777;font-size:13px">Если приложение не открылось автоматически, нажмите кнопку выше.</p><script>if(/Android/i.test(navigator.userAgent))location.href=${JSON.stringify(appLink)};</script></body>`
       : '<!doctype html><meta charset=utf-8><h3 style="font-family:sans-serif">Объявление снято с публикации</h3>';
     res.writeHead(l && !l.archived ? 200 : 404, { 'content-type': 'text/html; charset=utf-8', 'cache-control':'no-store', 'x-content-type-options':'nosniff' }); return res.end(html);
   }
@@ -844,5 +850,5 @@ http.createServer((req, res) => {
 }).listen(PORT, '0.0.0.0', () => console.log(`Сервер: http://0.0.0.0:${PORT}` + (PUB ? `  публичный: ${PUB}` : '')));
 
 // чистка просроченных кодов входа
-setInterval(() => { for (const c in db.codes) if (now() - db.codes[c].createdAt > 600e3) { delete db.codes[c]; touch(); } }, 60e3);
+setInterval(() => { waAuth.clean(); for (const c in db.codes) if (now() - db.codes[c].createdAt > 600e3) { delete db.codes[c]; touch(); } }, 60e3);
 botLoop();
