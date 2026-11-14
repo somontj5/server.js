@@ -217,9 +217,9 @@ const assert = require('assert/strict');
     await guest.addInitScript(()=>localStorage.setItem('gm_srv','https://gm.test/api'));
     await guest.goto('https://gm.test/#profile');await guest.waitForSelector('#authBtn');
     assert.equal(await guest.locator('#authBtn .lt').innerText(),'Войти');
-    assert.equal(await guest.locator('#authBtn svg').innerHTML(),await guest.evaluate(()=>P.login));
+    assert.equal(await guest.locator('#authBtn svg').innerHTML(),await guest.evaluate(()=>{var svg=document.createElementNS('http://www.w3.org/2000/svg','svg');svg.innerHTML=P.login;return svg.innerHTML}));
     await guest.click('#authBtn');await guest.waitForSelector('#tgAuth');
-    assert.equal(await guest.locator('#tgAuth .marketplace-logo svg').innerHTML(),await guest.evaluate(()=>P.bag));
+    assert.equal(await guest.locator('#tgAuth .marketplace-logo svg').innerHTML(),await guest.evaluate(()=>{var svg=document.createElementNS('http://www.w3.org/2000/svg','svg');svg.innerHTML=P.bag;return svg.innerHTML}));
     assert.equal(await guest.locator('#waGo svg').count(),1);assert.equal(await guest.locator('#taGo svg').count(),1);
     assert.ok(!(await guest.locator('#tgAuth').innerText()).includes('Отправьте готовый код'));
     for(const width of [320,390,480]){
