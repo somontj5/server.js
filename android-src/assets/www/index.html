@@ -417,6 +417,34 @@ button:focus:not(:focus-visible){outline:0}
 button:active,.btn:active{opacity:.82}
 @media(prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important;transition:none!important;scroll-behavior:auto!important}}
 </style>
+<style>
+/* 9.16: one neutral sign-in entry, consistent messenger actions and full-screen search. */
+#tgAuth{gap:16px;overflow-y:auto;justify-content:safe center;padding:28px 24px}
+#tgAuth .marketplace-logo{background:var(--blue);box-shadow:none;border-radius:22px}
+#tgAuth .marketplace-logo svg{width:46px;height:46px;color:#fff;stroke-width:1.6}
+#tgAuth p{max-width:340px;font-size:15px;line-height:1.55}
+#tgAuth .auth-reason{font-weight:600;color:var(--ink2)}
+#tgAuth .btn{min-height:52px;height:auto;margin:0;padding:14px 12px;font-size:16px;line-height:1.3}
+#tgAuth .btn svg{width:25px;height:25px;flex:0 0 25px}
+#tgAuth .auth-wa{background:#128c4a}
+#searchPg{position:fixed;inset:0;z-index:120;background:#fff;display:flex;flex-direction:column;padding-top:env(safe-area-inset-top);padding-bottom:env(safe-area-inset-bottom);overscroll-behavior:contain}
+.search-top{display:flex;align-items:center;width:100%;gap:8px;padding:8px 12px 10px 4px;flex:none}
+#searchForm{flex:1;min-width:0}.search-input{height:44px;display:flex;align-items:center;border-radius:24px;background:#f2f2f2;padding-left:16px}
+#searchQ{border:0;outline:0;min-width:0;width:100%;font-size:17px;background:none;padding:10px 0}
+#searchQ::-webkit-search-cancel-button,#searchQ::-webkit-search-decoration{-webkit-appearance:none;display:none}
+#searchClear{color:#777}
+#searchPg #hist{position:static;inset:auto;top:auto;max-height:none;min-height:0;width:100%;flex:1;overflow:auto;border:0;border-radius:0;box-shadow:none;padding:2px 0 20px;scrollbar-width:thin}
+.search-row{display:flex;align-items:center;min-height:56px;padding:0 8px 0 16px;gap:4px}
+.search-row:active{background:var(--gray2)}
+.search-run{display:flex;flex:1;align-items:center;gap:24px;min-width:0;text-align:left;min-height:56px;padding:10px 0;font-size:17px}
+.search-run .i{width:25px;height:25px;color:#333;flex:none}
+.search-run span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.search-fill{flex:none;display:grid;place-items:center;width:44px;height:48px;color:#333}
+.search-history-tools{display:flex;flex-direction:column;align-items:center;gap:10px;margin-top:24px;padding:0 16px;font-size:12px;color:var(--mut)}
+.search-history-tools button{color:var(--blue-d);font-size:14px;min-height:44px;padding:8px 12px}
+.search-empty{padding:48px 24px;text-align:center;color:var(--mut)}.search-empty svg{width:32px;height:32px;margin-bottom:12px}
+@media(max-width:340px){.search-run{font-size:16px;gap:18px}#tgAuth{padding-left:20px;padding-right:20px}#tgAuth .btn{font-size:15px}}
+</style>
 </head>
 <body>
 
@@ -428,7 +456,7 @@ button:active,.btn:active{opacity:.82}
       <div class="srow" style="position:relative">
         <label class="sbox"><span data-ic="search"></span><input id="q" type="search" placeholder="Поиск по объявлениям" autocomplete="off" enterkeyhint="search"><button class="clr" id="qClr" hidden data-ic="x"></button></label>
         <button class="ibtn g" id="btnFilter" aria-label="Фильтры"><span data-ic="sliders"></span><span class="dot" id="fDot" hidden></span></button>
-        <div id="hist" hidden></div>
+
       </div>
     </div>
     <div class="cats" id="cats"></div><div id="subcats" class="subcats" hidden></div>
@@ -473,7 +501,7 @@ button:active,.btn:active{opacity:.82}
       <button class="mi2" data-p="seller"><span data-ic="store"></span><span class="lt">Данные продавца<small id="pmSel"></small></span><span data-ic="chev" class="ch"></span></button>
       <div class="mgap"></div>
       <button class="mi2" data-p="sell"><span data-ic="plusc"></span><span class="lt">Разместить объявление</span><span data-ic="chev" class="ch"></span></button>
-      <button class="mi2 danger" data-p="logout" id="authBtn" onclick="if(!GM.logged()){GM.need('');return}if(confirm('Выйти из аккаунта?'))GM.logout()"><span data-ic="trash"></span><span class="lt">Выйти из аккаунта</span></button>
+      <button class="mi2 danger" data-p="logout" id="authBtn" onclick="if(!GM.logged()){GM.need('');return}if(confirm('Выйти из аккаунта?'))GM.logout()"><span data-ic="logout"></span><span class="lt">Выйти из аккаунта</span></button>
       <button class="mi2 danger" data-p="wipe"><span data-ic="trash"></span><span class="lt">Удалить все данные</span></button>
     </div>
     <div class="foot">СтеклоМаркет 9.14</div>
@@ -491,6 +519,10 @@ button:active,.btn:active{opacity:.82}
 <div id="itemPg" class="page" hidden></div>
 <div id="sellPg" class="page" hidden></div>
 <div id="chatPg" class="page" hidden></div>
+<section id="searchPg" role="dialog" aria-modal="true" aria-label="Поиск товаров" hidden>
+ <div class="search-top wrap"><button class="ibtn" id="searchBack" aria-label="Назад"></button><form id="searchForm" role="search"><label class="search-input"><input id="searchQ" type="search" placeholder="Поиск" autocomplete="off" maxlength="80" enterkeyhint="search" aria-label="Поисковый запрос"><button type="button" id="searchClear" class="ibtn" aria-label="Очистить запрос" hidden></button></label></form></div>
+ <div id="hist" class="wrap" aria-label="Недавние запросы и подсказки"></div>
+</section>
 <div id="pv" class="pv" hidden></div>
 <div class="modal" id="modal" hidden><div class="sheet" id="sheet"></div></div>
 <input id="fileIn" type="file" accept="image/*" multiple hidden>
@@ -546,6 +578,7 @@ var P={
  acc:'<circle cx="7" cy="14" r="4"/><circle cx="17" cy="14" r="4"/><path d="M11 14h2M3 14l1-6M21 14l-1-6"/>',
  other:'<path d="M21 8l-9-5-9 5v8l9 5 9-5z"/><path d="M3 8l9 5 9-5M12 13v8"/>'
 };
+P.login='<path d="M14 3h6v18h-6M3 12h12M10 7l5 5-5 5"/>';P.logout='<path d="M10 3H4v18h6M9 12h12M16 7l5 5-5 5"/>';
 P.eye='<path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/>';P.chart='<path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/>';
 P['suits']='<path d="M5 3 2 6l1 5 2-1v11h8V10l2 1 1-5-3-3-4 3z"/><path d="m5 3 2 7 2-4 2 4 2-7M9 6v15M6 15h1M11 15h1M17 4h4l1 17h-3l-1-10-1 10h-3l2-14M17 7h4"/>';
 P['national']='<path d="M8 5h8l5 4-2 5-3-2 2 9H6l2-9-3 2-2-5zM9 5l3 5 3-5M12 10v11M7 17l2-2 2 2-2 2zM13 17l2-2 2 2-2 2zM8 3c0-3 8-3 8 0z"/>';
@@ -555,9 +588,9 @@ P['tops']='<path d="M8 4L2 8l3 5 3-2v10h8V11l3 2 3-5-6-4a4 4 0 0 1-8 0z"/>';
 P['knit']='<path d="M8 4 4 6 2 17l4 1 2-7v10h8V11l2 7 4-1-2-11-4-2M9 3v4h6V3M8 18h8M10 10v5M14 10v5M3 15l3 1M18 16l3-1"/>';
 P['pants']='<path d="M6 3h12l2 18h-6l-2-11-2 11H4zM6 6h12M12 3v7M6 6l3 3M18 6l-3 3"/>';
 P['home']='<path d="M8 3h8l4 4-2 5-2-1v10H8V11l-2 1-2-5zM9 3l3 7 3-7M12 10v11M8 13h8M15 16h1"/>';
-P['sport']='<path d="m5 3-3 3 1 9 3-1v7h8v-7l2 1 1-9-3-3-4 3z"/><path d="M8 3v4h4V3M10 7v14M3 10l2-1M15 9l1 1M18 5h3l1 16h-3l-1-9-1 9h-2M18 8h3M20 10l1 8"/>';
+P['sport']='<path d="m8 3-6 4 3 5 3-2v11h8V10l3 2 3-5-6-4a4 4 0 0 1-8 0z"/><path d="M10 10h4l-3 7"/>';
 P['under']='<path d="M4 3h6v10c0 2-1 3-3 4l-2 1a2 2 0 0 1-2-4l1-1zM4 6h6M14 5h6v10c0 2-1 3-3 4l-2 1a2 2 0 0 1-2-4l1-1zM14 8h6"/>';
-P['headwear']='<path d="M4 17 2 21h14l-2-4 1-6c0-4-2-8-6-8s-6 4-6 8z"/><path d="M6 9c0-4 6-4 6 0v2a3 3 0 0 1-6 0zM6 14l6 7M12 14l-5 7"/><path d="M16 13v-3a3 3 0 0 1 6 0v3M16 11h6M16 13h7v3h-7z"/>';
+P['headwear']='<circle cx="12" cy="3.5" r="2"/><path d="M5 16v-3a7 7 0 0 1 14 0v3M9 8l-1 8M15 8l1 8"/><rect x="3" y="16" width="18" height="5" rx="1.5"/>';
 P['shoes']='<path d="M3 6h5l3 7 8 2 2 3v3H3zM3 18h18M10 11l3-1M12 14l3-1"/>';
 P['bags']='<path d="M4 8h16l1 13H3zM8 9V6a4 4 0 0 1 8 0v3M7 12v2M17 12v2"/>';
 P['acc']='<circle cx="6" cy="13" r="4"/><circle cx="18" cy="13" r="4"/><path d="M10 12h4M2 12l1-5h3M22 12l-1-5h-3"/>';
@@ -836,35 +869,68 @@ $('cats').addEventListener('click',function(e){var c=e.target.closest('[data-c]'
 $('fchips').addEventListener('click',function(e){var c=e.target.closest('[data-rm]');if(!c)return;var r=c.dataset.rm;if(r==='cat'){S.cat='all';S.section=''}if(r==='section')S.section='';if(r==='price'){S.pmin='';S.pmax=''}if(r==='sort')S.sort='rec';if(r.indexOf('a_')===0)delete S.f[r.slice(2)];renderGrid()});
 window.addEventListener('scroll',function(){$('homeHead').classList.toggle('sh',window.scrollY>4)},{passive:true});
 
-/* поиск + история */
-var qi=$('q');
-var qT;qi.addEventListener('input',function(){S.q=qi.value;$('qClr').hidden=!qi.value;drawHist();clearTimeout(qT);qT=setTimeout(renderGrid,180)});
-qi.addEventListener('focus',drawHist);
-qi.addEventListener('keydown',function(e){if(e.key==='Enter'){pushHist();qi.blur()}});
-qi.addEventListener('blur',function(){pushHist();setTimeout(function(){$('hist').hidden=true},150)});
-$('qClr').addEventListener('click',function(e){e.preventDefault();clearTimeout(qT);qi.value='';S.q='';$('qClr').hidden=true;renderGrid();qi.focus();drawHist()});
-function pushHist(){var q=qi.value.trim();if(q.length<2)return;hist=hist.filter(function(x){return x.toLowerCase()!==q.toLowerCase()});hist.unshift(q);hist=hist.slice(0,6);jset(K.H,hist);try{if(window.GM&&GM.logged())GM.api('POST','/events',{type:'search',q:q}).catch(function(){})}catch(e){}}
-var SSG={q:'',items:[]},POP=[],sgT;
-function srvSuggest(q){clearTimeout(sgT);sgT=setTimeout(function(){if(!window.GM||!GM.srv())return;
-  GM.api('GET','/suggest?q='+encodeURIComponent(q)).then(function(r){if(!r||!r.items)return;if(q){SSG={q:q,items:r.items};if(qi.value===q)drawHist()}else{POP=r.items;drawHist()}}).catch(function(){})},q?150:0)}
-function hl(q,t){var n=q.toLowerCase().trim(),i=t.toLowerCase().indexOf(n);return i===0?'<b>'+esc(t.slice(0,n.length))+'</b>'+esc(t.slice(n.length)):esc(t)}
-function drawHist(){var h=$('hist'),v=qi.value;if(document.activeElement===qi&&v.trim()){
-    if(SSG.q!==v)srvSuggest(v);var loc=GME.suggest(v,(window.SF||[]).concat(listings).filter(function(l){return !l.archived})),seen={},sg=[];
-    (SSG.q===v?SSG.items:[]).concat(loc).forEach(function(x){var k=x.toLowerCase();if(!seen[k]&&sg.length<8){seen[k]=1;sg.push(x)}});
-    if(!sg.length){h.hidden=true;return}
-    h.innerHTML=sg.map(function(q){return '<button class="hrow" data-hq="'+esc(q)+'">'+ic('search')+'<span>'+hl(v,q)+'</span><span class="hfill" data-fill="'+esc(q)+'">↖</span></button>'}).join('');h.hidden=false;return}
-  if(document.activeElement!==qi||v){h.hidden=true;return}
-  if(!POP.length&&!drawHist.p){drawHist.p=1;srvSuggest('')}
-  var pop=POP.filter(function(p){return hist.every(function(x){return x.toLowerCase()!==p})}).slice(0,6);
-  if(!hist.length&&!pop.length){h.hidden=true;return}
-  h.innerHTML=(hist.length?'<div class="hhead"><span>Вы искали</span><button data-hc="1">Очистить</button></div>'+hist.map(function(q){return '<button class="hrow" data-hq="'+esc(q)+'">'+ic('clock')+'<span>'+esc(q)+'</span><span class="hremove" data-hr="'+esc(q)+'" role="button" aria-label="Удалить запрос">'+ic('x')+'</span></button>'}).join(''):'')
-    +(pop.length?'<div class="hhead"><span>Часто ищут</span></div><div class="hpop">'+pop.map(function(q){return '<button class="chip" data-hq="'+esc(q)+'">'+esc(q)+'</button>'}).join('')+'</div>':'');h.hidden=false}
-$('hist').addEventListener('pointerdown',function(e){e.preventDefault();
-  var rm=e.target.closest('[data-hr]');if(rm){hist=hist.filter(function(q){return q!==rm.dataset.hr});jset(K.H,hist);drawHist();return}
-  if(e.target.closest('[data-hc]')){hist=[];jset(K.H,hist);$('hist').hidden=true;return}
-  var f=e.target.closest('[data-fill]');if(f){qi.value=f.dataset.fill+' ';S.q=qi.value;$('qClr').hidden=false;drawHist();clearTimeout(qT);qT=setTimeout(renderGrid,180);return}
-  var b=e.target.closest('[data-hq]');if(b){qi.value=b.dataset.hq;S.q=qi.value;$('qClr').hidden=false;pushHist();renderGrid();qi.blur()}});
-
+/* Dedicated recent-search screen: only submitted queries are recorded. */
+var qi=$('q'),sq=$('searchQ'),qT,SSG={q:'',items:[]},POP=[],sgT,sgPending='',searchSuppress=0;
+$('searchBack').innerHTML=ic('back');$('searchClear').innerHTML=ic('x');
+function openSearch(){
+ var pg=$('searchPg');if(pg.hidden){sq.value=qi.value;pg.hidden=false;drawHist()}
+ document.body.style.overflow='hidden';if(location.hash!=='#search')location.hash='search';
+ sq.focus();
+}
+function closeSearch(){
+ sq.blur();$('searchPg').hidden=true;document.body.style.overflow='';
+ if(location.hash==='#search'){if(history.length>1)history.back();else location.replace('#home')}
+}
+function pushHist(){var q=qi.value.trim().slice(0,80);if(!q)return;hist=hist.filter(function(x){return x.toLowerCase()!==q.toLowerCase()});hist.unshift(q);hist=hist.slice(0,30);jset(K.H,hist);try{if(window.GM&&GM.logged())GM.api('POST','/events',{type:'search',q:q}).catch(function(){})}catch(e){}}
+function submitSearch(value){
+ qi.value=String(value==null?sq.value:value).trim().slice(0,80);S.q=qi.value;$('qClr').hidden=!qi.value;
+ clearTimeout(qT);if(qi.value)pushHist();closeSearch();renderGrid();window.scrollTo(0,0);
+}
+qi.addEventListener('focus',openSearch);
+qi.addEventListener('input',function(){sq.value=qi.value;openSearch();drawHist()});
+qi.addEventListener('keydown',function(e){if(e.key==='Enter'){e.preventDefault();submitSearch(qi.value)}});
+$('qClr').onclick=function(e){e.preventDefault();qi.value='';S.q='';$('qClr').hidden=true;renderGrid()};
+$('searchBack').onclick=closeSearch;
+$('searchForm').onsubmit=function(e){e.preventDefault();submitSearch()};
+sq.oninput=drawHist;
+sq.onkeydown=function(e){if(e.key==='Escape'){e.preventDefault();closeSearch()}if(e.key==='ArrowDown'){e.preventDefault();var b=$('hist').querySelector('[data-hq]');if(b)b.focus()}};
+$('searchClear').onclick=function(){sq.value='';drawHist();sq.focus()};
+function srvSuggest(q){
+ if(sgPending===q)return;sgPending=q;clearTimeout(sgT);
+ sgT=setTimeout(function(){if(!window.GM||!GM.srv()){sgPending='';return}
+  GM.api('GET','/suggest?q='+encodeURIComponent(q)).then(function(r){if(!r||!Array.isArray(r.items))return;
+   if(q){SSG={q:q,items:r.items}}else POP=r.items;
+   if(!$('searchPg').hidden&&sq.value.trim()===q)drawHist();
+  }).catch(function(){});
+ },q?160:0);
+}
+function hl(q,t){var n=q.toLowerCase().trim();return n&&t.toLowerCase().indexOf(n)===0?'<b>'+esc(t.slice(0,n.length))+'</b>'+esc(t.slice(n.length)):esc(t)}
+function drawHist(){
+ if($('searchPg').hidden)return;var q=sq.value.trim(),seen={},rows=[];sq.value=sq.value.slice(0,80);$('searchClear').hidden=!sq.value;
+ function add(text,recent){text=String(text||'').trim();var k=text.toLowerCase();if(!text||seen[k]||rows.length>=20)return;seen[k]=1;rows.push({text:text,recent:recent})}
+ hist.forEach(function(x){if(!q||x.toLowerCase().indexOf(q.toLowerCase())>=0)add(x,true)});
+ if(q){if(SSG.q!==q)srvSuggest(q);(SSG.q===q?SSG.items:[]).concat(GME.suggest(q,(window.SF||[]).concat(listings).filter(function(l){return !l.archived}))).forEach(function(x){add(x,false)})}
+ else if(!hist.length){if(!POP.length)srvSuggest('');POP.forEach(function(x){add(x,false)})}
+ var h=rows.map(function(r){return '<div class="search-row"'+(r.recent?' data-recent="'+esc(r.text)+'"':'')+'><button class="search-run" data-hq="'+esc(r.text)+'"'+(r.recent?' aria-description="Удерживайте, чтобы удалить из истории"':'')+'>'+ic(r.recent?'clock':'search')+'<span>'+hl(q,r.text)+'</span></button><button class="search-fill" data-fill="'+esc(r.text)+'" aria-label="Подставить запрос: '+esc(r.text)+'"><svg class="i" viewBox="0 0 24 24"><path d="M18 18 6 6M6 16V6h10"/></svg></button></div>'}).join('');
+ if(!rows.length)h='<div class="search-empty">'+ic('search')+'<p>'+(q?'Нажмите «Поиск» на клавиатуре':'Здесь появятся ваши недавние запросы')+'</p></div>';
+ if(hist.length&&!q)h+='<div class="search-history-tools"><span>Удерживайте запрос, чтобы удалить</span><button data-hc="1">Очистить историю</button></div>';
+ setH($('hist'),h);
+}
+function removeRecent(q){if(confirm('Удалить «'+q+'» из истории поиска?')){hist=hist.filter(function(x){return x!==q});jset(K.H,hist);drawHist()}}
+$('hist').onclick=function(e){
+ if(Date.now()<searchSuppress)return;
+ if(e.target.closest('[data-hc]')){if(confirm('Очистить историю поиска на этом устройстве?')){hist=[];jset(K.H,hist);drawHist()}return}
+ var f=e.target.closest('[data-fill]');if(f){sq.value=f.dataset.fill;drawHist();sq.focus();sq.setSelectionRange&&sq.type!=='search'&&sq.setSelectionRange(sq.value.length,sq.value.length);return}
+ var b=e.target.closest('[data-hq]');if(b)submitSearch(b.dataset.hq);
+};
+(function(){var timer,x,y;
+ var box=$('hist');function cancel(){clearTimeout(timer)}
+ box.addEventListener('pointerdown',function(e){var row=e.target.closest('[data-recent]');if(!row||e.target.closest('[data-fill]'))return;x=e.clientX;y=e.clientY;timer=setTimeout(function(){searchSuppress=Date.now()+700;removeRecent(row.dataset.recent)},550)});
+ box.addEventListener('pointermove',function(e){if(Math.abs(e.clientX-x)>8||Math.abs(e.clientY-y)>8)cancel()});
+ ['pointerup','pointercancel','pointerleave'].forEach(function(t){box.addEventListener(t,cancel)});
+ box.addEventListener('contextmenu',function(e){var row=e.target.closest('[data-recent]');if(row){e.preventDefault();cancel();searchSuppress=Date.now()+700;removeRecent(row.dataset.recent)}});
+ box.addEventListener('keydown',function(e){var row=e.target.closest('[data-recent]');if(row&&e.key==='Delete'){e.preventDefault();removeRecent(row.dataset.recent)}});
+})();
 
 /* ===================== фильтры ===================== */
 var ft;
@@ -1339,6 +1405,8 @@ function showTab(v){
 }
 function route(){
   var p=(location.hash||'#home').slice(1).split('/');
+  if(p[0]==='search'){openSearch();return}
+  if(!$('searchPg').hidden){sq.blur();$('searchPg').hidden=true}
   if(p[0]!=='filter'&&!$('modal').hidden)hideModal();
   $('pv').hidden=true;
   if(p[0]!=='item')$('itemPg').hidden=true;
@@ -1368,6 +1436,7 @@ var SK='gm_srv',TK='gm_token',UK='gm_user';
 function g(k){try{return localStorage.getItem(k)||''}catch(e){return''}}
 function st(k,v){try{v?localStorage.setItem(k,v):localStorage.removeItem(k)}catch(e){}}
 var TGI='<svg width="26" height="26" viewBox="0 0 24 24" fill="#fff"><path d="M9.8 15.3l-.4 5.3c.6 0 .8-.3 1.1-.6l2.6-2.5 5.4 4c1 .5 1.7.3 2-.9l3.6-17c.3-1.5-.6-2.1-1.6-1.7L1.4 9.9c-1.4.6-1.4 1.4-.2 1.8l5.4 1.7L19 5.6c.6-.4 1.1-.2.7.2"/></svg>';
+var WAI='<svg width="26" height="26" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M20.5 3.5A11.9 11.9 0 0 0 1.8 17.9L.2 24l6.2-1.6A11.9 11.9 0 0 0 24 11.9c0-3.2-1.2-6.2-3.5-8.4zM12 21.8a9.8 9.8 0 0 1-5-1.4l-.4-.2-3.7 1 1-3.6-.3-.4A9.9 9.9 0 1 1 12 21.8zm5.4-7.4c-.3-.1-1.8-.9-2.1-1-.3-.1-.5-.1-.7.2l-1 1.2c-.2.2-.4.2-.7.1a8.1 8.1 0 0 1-4-3.5c-.3-.5.3-.4.9-1.7.1-.2.1-.4 0-.6l-.9-2.2c-.2-.6-.5-.5-.7-.5h-.6c-.2 0-.5.1-.8.4-.3.3-1 1-1 2.4s1 2.8 1.2 3c.1.2 2.1 3.2 5 4.5.7.3 1.3.5 1.7.6.7.2 1.3.2 1.8.1.5-.1 1.8-.8 2.1-1.5.3-.7.3-1.3.2-1.4-.1-.1-.3-.2-.6-.4z"/></svg>';
 window.GM={srv:function(){return g(SK).replace(/\/+$/,'')},token:function(){return g(TK)},
  user:function(){try{return JSON.parse(g(UK))}catch(e){return null}},
  api:function(m,path,body){var ctl=new AbortController(),timer=setTimeout(function(){ctl.abort()},15000);return fetch(GM.srv()+path,{method:m,signal:ctl.signal,headers:GM.token()?{'content-type':'application/json',authorization:'Bearer '+GM.token()}:{'content-type':'application/json'},body:body?JSON.stringify(body):undefined}).then(function(r){if(r.status===401&&GM.token()){GM.logout();throw new Error('401')}return r.json()}).then(function(r){clearTimeout(timer);return r},function(e){clearTimeout(timer);if(typeof findServer==='function')setTimeout(findServer,500);throw e})},
@@ -1392,9 +1461,9 @@ function show(w){
  if(typeof w==='string')why=w;
  authGeneration++;if(el)el.remove();clearInterval(timer);cur=null;
  el=document.createElement('div');el.id='tgAuth';
- el.innerHTML='<div class="logo">'+TGI.replace(/26/g,'44')+'</div><h2>СтеклоМаркет</h2>'+
- '<p>'+(why||'Войдите через WhatsApp или Telegram без пароля.')+' Регистрация произойдёт автоматически. Отправьте готовый код в WhatsApp и вернитесь сюда.</p>'+
- '<button class="btn" id="waGo" style="background:#128c4a;color:#fff;margin-bottom:10px">Войти через WhatsApp</button>'+
+ el.innerHTML='<div class="logo marketplace-logo" aria-hidden="true">'+ic('bag')+'</div><h2>СтеклоМаркет</h2>'+
+ (why?'<p class="auth-reason">'+esc(why)+'</p>':'')+'<p>Выберите WhatsApp или Telegram, чтобы войти без пароля. Если аккаунта ещё нет, он создастся автоматически.</p>'+
+ '<button class="btn auth-wa" id="waGo">'+WAI+'<span>Войти через WhatsApp</span></button>'+
  '<button class="btn" id="taGo">'+TGI+'<span>Войти через Telegram</span></button>'+
  '<div class="err" id="taErr"></div><button class="lnk" id="taLater" style="color:#555;font-size:15px">Не сейчас</button>';
  document.body.appendChild(el);
@@ -1409,7 +1478,7 @@ function startWa(){
  }).then(function(d){
   if(generation!==authGeneration||!el)return;
   cur=d;cur.wa=true;
-  el.innerHTML='<h2>Подтвердите вход</h2><p>1. В WhatsApp нажмите «Отправить» — текст уже заполнен.<br>2. Вернитесь в приложение. Вход выполнится автоматически.</p><p><strong id="waCode"></strong></p><p>Код действует 5 минут. Не пересылайте его другим людям.</p><button class="btn" id="waOpen" style="background:#128c4a;color:#fff">Открыть WhatsApp</button><div class="err" id="taErr" role="status" aria-live="polite"></div><button class="lnk" id="waCancel">Отмена</button>';
+  el.innerHTML='<h2>Подтвердите вход</h2><p>1. В WhatsApp нажмите «Отправить» — текст уже заполнен.<br>2. Вернитесь в приложение. Вход выполнится автоматически.</p><p><strong id="waCode"></strong></p><p>Код действует 5 минут. Не пересылайте его другим людям.</p><button class="btn auth-wa" id="waOpen">'+WAI+'<span>Открыть WhatsApp</span></button><div class="err" id="taErr" role="status" aria-live="polite"></div><button class="lnk" id="waCancel">Отмена</button>';
   el.querySelector('#waCode').textContent=d.code;
   el.querySelector('#waOpen').onclick=function(){if(cur)location.href=cur.link};
   el.querySelector('#waCancel').onclick=function(){show()};
@@ -1464,7 +1533,7 @@ document.addEventListener('click',function(e){var b=e.target.closest('[data-a="c
 guard();
 findServer();
 })();
-(function(){var b=document.getElementById('authBtn');if(b&&!GM.logged()){b.classList.remove('danger');b.querySelector('.lt').textContent='Войти: WhatsApp / Telegram';b.style.color='#00aaff'}})();
+(function(){var b=document.getElementById('authBtn');if(b&&!GM.logged()){b.classList.remove('danger');b.querySelector('.lt').textContent='Войти';var icon=b.querySelector('svg');if(icon)icon.outerHTML=ic('login');b.style.color='#00aaff'}})();
 </script>
 <script>
 /* ===== Персональная лента с сервера ===== */
