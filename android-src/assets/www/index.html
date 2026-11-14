@@ -870,7 +870,7 @@ $('fchips').addEventListener('click',function(e){var c=e.target.closest('[data-r
 window.addEventListener('scroll',function(){$('homeHead').classList.toggle('sh',window.scrollY>4)},{passive:true});
 
 /* Dedicated recent-search screen: only submitted queries are recorded. */
-var qi=$('q'),sq=$('searchQ'),qT,SSG={q:'',items:[]},POP=[],sgT,sgPending='',searchSuppress=0;
+var qi=$('q'),sq=$('searchQ'),qT,SSG={q:'',items:[]},POP=[],sgT,sgPending=null,searchSuppress=0;
 $('searchBack').innerHTML=ic('back');$('searchClear').innerHTML=ic('x');
 function openSearch(){
  var pg=$('searchPg');if(pg.hidden){sq.value=qi.value;pg.hidden=false;drawHist()}
@@ -916,10 +916,10 @@ function drawHist(){
  if(hist.length&&!q)h+='<div class="search-history-tools"><span>Удерживайте запрос, чтобы удалить</span><button data-hc="1">Очистить историю</button></div>';
  setH($('hist'),h);
 }
-function removeRecent(q){if(confirm('Удалить «'+q+'» из истории поиска?')){hist=hist.filter(function(x){return x!==q});jset(K.H,hist);drawHist()}}
+function removeRecent(q){confirm('Удалить «'+q+'» из истории поиска?',function(){hist=hist.filter(function(x){return x!==q});jset(K.H,hist);drawHist()})}
 $('hist').onclick=function(e){
  if(Date.now()<searchSuppress)return;
- if(e.target.closest('[data-hc]')){if(confirm('Очистить историю поиска на этом устройстве?')){hist=[];jset(K.H,hist);drawHist()}return}
+ if(e.target.closest('[data-hc]')){confirm('Очистить историю поиска на этом устройстве?',function(){hist=[];jset(K.H,hist);drawHist()});return}
  var f=e.target.closest('[data-fill]');if(f){sq.value=f.dataset.fill;drawHist();sq.focus();sq.setSelectionRange&&sq.type!=='search'&&sq.setSelectionRange(sq.value.length,sq.value.length);return}
  var b=e.target.closest('[data-hq]');if(b)submitSearch(b.dataset.hq);
 };
@@ -1808,12 +1808,13 @@ window.sellerSheet=function(){
 var okOnce=false,lastT=null,dlg=null;
 document.addEventListener('click',function(e){if(!e.target.closest('.cfm'))lastT=e.target},true);
 function close(){if(dlg){var d=dlg;dlg=null;d.classList.remove('on');setTimeout(function(){d.remove()},220)}}
-window.confirm=function(m){if(okOnce){okOnce=false;return true}
+window.confirm=function(m,onConfirm){if(okOnce){okOnce=false;return true}
  var t=lastT,dg=/Удал|Очист|Выйти/.test(m),lbl=/Выйти/.test(m)?'Выйти':/Очист/.test(m)?'Очистить':/Удал/.test(m)?'Удалить':'Да';
  close();var d=document.createElement('div');d.className='cfm';
  d.innerHTML='<div class="cfb"><h4>'+(dg?'Вы уверены?':'Подтвердите')+'</h4><p></p><div class="cfr"><button class="btn cno" data-c="0">Отмена</button><button class="btn cyes'+(dg?' dg':'')+'" data-c="1">'+lbl+'</button></div></div>';
  d.querySelector('p').textContent=m;document.body.appendChild(d);dlg=d;d.offsetWidth;d.classList.add('on');
  d.onclick=function(e){var b=e.target.closest('[data-c]');if(!b&&e.target!==d)return;var yes=b&&b.dataset.c==='1';close();
+  if(yes&&onConfirm){onConfirm();return}
   if(yes&&t){okOnce=true;try{t.click()}finally{okOnce=false}}};
  return false};
 /* кнопка «Назад»: не выходить сразу */

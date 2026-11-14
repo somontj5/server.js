@@ -9,7 +9,7 @@ const assert = require('assert/strict');
     const context = await browser.newContext({viewport:{width:320,height:700}});
     const page = await context.newPage(), errors = [];let networkDown=false;
     page.on('pageerror', e => { errors.push(e.message); console.error('Page error:',e.message); });
-    await page.route('**/*', async route => {
+    const appRoute=async route => {
       const url = new URL(route.request().url());
       if (url.hostname === 'gm.test' && url.pathname.startsWith('/api/')) {
         if(networkDown)return route.abort('internetdisconnected');
@@ -24,7 +24,7 @@ const assert = require('assert/strict');
       }
       if (/github/.test(url.hostname)) return route.fulfill({contentType:'text/plain',body:'https://gm.test/api'});
       return route.abort();
-    });
+    };await page.route('**/*',appRoute);
     await page.addInitScript(() => {
       localStorage.setItem('gm_srv','https://gm.test/api');
       localStorage.setItem('gm_token','test-buyer');
@@ -160,14 +160,30 @@ const assert = require('assert/strict');
     await page.screenshot({path:'.local-build/size-search.png',fullPage:true});
     await page.emulateMedia({reducedMotion:'reduce'});
     assert.equal(await page.locator('#f-section').evaluate(e=>getComputedStyle(e).animationName),'none');
-    // Search has a single clear control and individually removable history rows.
-    await page.evaluate(()=>{resetFilters();location.hash='home';hist=['55','Платье'];jset(K.H,hist);});
-    await page.waitForTimeout(200);await page.focus('#q');await page.waitForSelector('#hist:not([hidden])');
-    assert.equal(await page.locator('[data-hr="55"]').count(),1);
-    await page.locator('[data-hr="55"]').click();assert.deepEqual(await page.evaluate(()=>hist),['Платье']);
-    await page.fill('#q','55');await page.click('#qClr');assert.equal(await page.inputValue('#q'),'');
-    await page.screenshot({path:'.local-build/search-history-9.14.png'});
-    await page.locator('#q').blur();
+    // YouTube-like full-screen history: arrows fill, rows submit, drafts are not recorded.
+    await page.evaluate(()=>{resetFilters();location.hash='home';hist=['55','Платье','Куртка'];jset(K.H,hist);});
+    await page.waitForTimeout(200);await page.focus('#q');await page.waitForSelector('#searchPg:not([hidden])');
+    assert.equal(await page.locator('#searchPg').evaluate(e=>Math.round(e.getBoundingClientRect().height)),700);
+    assert.equal(await page.locator('.search-row').count(),3);
+    await page.click('[data-fill="Платье"]');assert.equal(await page.inputValue('#searchQ'),'Платье');
+    assert.deepEqual(await page.evaluate(()=>hist),['55','Платье','Куртка']);
+    await page.fill('#searchQ','Неотправленный запрос');await page.click('#searchBack');
+    await page.waitForSelector('#searchPg',{state:'hidden'});assert.ok(!(await page.evaluate(()=>hist)).includes('Неотправленный запрос'));
+    await page.focus('#q');await page.waitForSelector('#searchPg:not([hidden])');
+    await page.locator('[data-hq="55"]').click({button:'right'});await page.click('.cfm.on [data-c="1"]');
+    assert.deepEqual(await page.evaluate(()=>hist),['Платье','Куртка']);
+    await page.waitForTimeout(750);await page.click('[data-hq="Платье"]');
+    await page.waitForSelector('#searchPg',{state:'hidden'});assert.equal(await page.evaluate(()=>S.q),'Платье');
+    await page.focus('#q');await page.waitForSelector('#searchPg:not([hidden])');
+    await page.fill('#searchQ','Пальто');await page.press('#searchQ','Enter');
+    await page.waitForSelector('#searchPg',{state:'hidden'});assert.equal(await page.evaluate(()=>hist[0]),'Пальто');
+    await page.focus('#q');await page.waitForSelector('#searchPg:not([hidden])');await page.click('#searchClear');
+    assert.equal(await page.inputValue('#searchQ'),'');
+    for(const width of [320,390,480]){await page.setViewportSize({width,height:700});assert.ok(await page.locator('#searchPg').evaluate(e=>e.scrollWidth<=innerWidth));}
+    await page.screenshot({path:'.local-build/search-history-9.16.png'});
+    await page.click('[data-hc]');await page.click('.cfm.on [data-c="1"]');assert.deepEqual(await page.evaluate(()=>hist),[]);
+    await page.click('#searchBack');await page.waitForSelector('#searchPg',{state:'hidden'});
+    await page.setViewportSize({width:390,height:700});
     // A real image is cached separately from message metadata, survives a cold offline reload,
     // remains downloadable offline, and missing cache entries offer explicit retry.
     const photo=await page.evaluate(()=>{var cv=document.createElement('canvas');cv.width=300;cv.height=180;var x=cv.getContext('2d');x.fillStyle='#dceeff';x.fillRect(0,0,300,180);x.fillStyle='#2373b9';x.fillRect(80,30,140,120);return cv.toDataURL('image/png')});
@@ -195,6 +211,24 @@ const assert = require('assert/strict');
     assert.notEqual(await page.evaluate(()=>P.national),await page.evaluate(()=>P.dress));
     await page.locator('#cats').evaluate(e=>{e.style.cssText='display:grid;grid-template-columns:repeat(3,1fr);grid-template-rows:none;grid-auto-flow:row;grid-auto-columns:auto;overflow:visible';e.querySelectorAll('.cat').forEach(b=>b.style.height='100px')});
     await page.locator('#cats').screenshot({path:'.local-build/category-icons-9.14.png'});
+    // Guest entry uses login icon; hero is marketplace-neutral; both messenger actions match.
+    const guestContext=await browser.newContext({viewport:{width:320,height:700}}),guest=await guestContext.newPage();
+    await guest.route('**/*',appRoute);guest.on('pageerror',e=>errors.push(e.message));
+    await guest.addInitScript(()=>localStorage.setItem('gm_srv','https://gm.test/api'));
+    await guest.goto('https://gm.test/#profile');await guest.waitForSelector('#authBtn');
+    assert.equal(await guest.locator('#authBtn .lt').innerText(),'Войти');
+    assert.equal(await guest.locator('#authBtn svg').innerHTML(),await guest.evaluate(()=>P.login));
+    await guest.click('#authBtn');await guest.waitForSelector('#tgAuth');
+    assert.equal(await guest.locator('#tgAuth .marketplace-logo svg').innerHTML(),await guest.evaluate(()=>P.bag));
+    assert.equal(await guest.locator('#waGo svg').count(),1);assert.equal(await guest.locator('#taGo svg').count(),1);
+    assert.ok(!(await guest.locator('#tgAuth').innerText()).includes('Отправьте готовый код'));
+    for(const width of [320,390,480]){
+      await guest.setViewportSize({width,height:700});
+      const buttons=await guest.locator('#waGo,#taGo').evaluateAll(es=>es.map(e=>({w:e.offsetWidth,h:e.offsetHeight,sw:e.scrollWidth,cw:e.clientWidth})));
+      assert.equal(buttons[0].w,buttons[1].w);assert.equal(buttons[0].h,buttons[1].h);assert.ok(buttons.every(x=>x.sw<=x.cw));
+    }
+    await guest.screenshot({path:'.local-build/sign-in-9.16.png'});await guest.click('#taLater');
+    await guest.screenshot({path:'.local-build/profile-9.16.png'});await guestContext.close();
     assert.deepEqual(errors,[]);
     console.log('Browser hierarchy, filters, form, similar, favourites, scroll and reduced motion PASS');
   } finally { await browser.close(); await service.stop(); }
