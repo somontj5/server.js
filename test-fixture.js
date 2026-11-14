@@ -1,6 +1,5 @@
 // Isolated test database only. Never loads or modifies data/db.json.
 const fs = require('node:fs');
-const os = require('node:os');
 const path = require('node:path');
 const { spawn } = require('node:child_process');
 function fixture() {
@@ -30,7 +29,8 @@ function fixture() {
   return {users,sessions,listings,codes:{},threads:{},reviews:[],searches:{}};
 }
 async function start(port=18091){
- const dir=fs.mkdtempSync(path.join(os.tmpdir(),'gm-size-tests-')),file=path.join(dir,'db.json');fs.writeFileSync(file,JSON.stringify(fixture()));
+ fs.mkdirSync(path.join(__dirname,'.local-build'),{recursive:true});
+ const dir=fs.mkdtempSync(path.join(__dirname,'.local-build','gm-size-tests-')),file=path.join(dir,'db.json');fs.writeFileSync(file,JSON.stringify(fixture()));
  const child=spawn(process.execPath,['server.js'],{cwd:__dirname,env:{...process.env,PORT:String(port),GM_CHILD:'1',DB_FILE:file,BOT_TOKEN:'',AI_WORKER_TOKEN:'test-worker',GITHUB_ACTIONS:''},stdio:['ignore','pipe','pipe']});
  let log='';child.stdout.on('data',d=>log+=d);child.stderr.on('data',d=>log+=d);
  const base='http://127.0.0.1:'+port;

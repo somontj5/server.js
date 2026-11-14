@@ -53,7 +53,7 @@ test('Live isolated API: persistence, validation, size sorting, legacy suites',a
  for(const sort of ['rec','cheap','new']){const r=await api(path+'&sort='+sort);assert.equal(r.status,200);const ids=r.data.items.map(x=>x.id);assert.equal(ids.at(-1),'size-unknown');assert.ok(ids.includes('size-exact'));assert.ok(ids.includes('size-bounded'));assert.ok(!ids.includes('size-letters'));assert.ok(!ids.includes('size-child'))}
  assert.equal((await api('/listings?sizes=%7Bbad')).status,400);
  assert.equal((await api('/listings?cat=clothes&sub=dress&size=48')).data.total,3);
- const draft={name:'Платье тест размера',cat:'clothes',sub:'dress',section:'dress-dresses',a:{gender:'Женское',ageGroup:'Взрослое'},row:'1',shopNum:'1',shopName:'Тест',photos:['data:image/png;base64,AA=='],sizes:spec('number','48','50')};
+ const draft={desc:'Качественное платье для повседневной носки',name:'Платье тест размера',cat:'clothes',sub:'dress',section:'dress-dresses',a:{gender:'Женское',ageGroup:'Взрослое'},row:'1',shopNum:'1',shopName:'Тест',photos:['data:image/png;base64,AA=='],sizes:spec('number','48','50')};
  const made=await api('/listings','POST',draft);assert.equal(made.status,200);assert.deepEqual(made.data.sizes,draft.sizes);
  assert.equal((await api('/listings/'+made.data.id)).data.a.size,'48, 50');
  assert.equal((await api('/listings/'+made.data.id,'PUT',{sizes:spec('number','44')})).status,200);
@@ -90,7 +90,7 @@ test('API keeps multiple materials without truncation, accepts other production 
  const service=await start(18700+Math.floor(Math.random()*200));
  async function api(path,method='GET',body){const r=await fetch(service.base+path,{method,headers:{authorization:'Bearer test-seller','content-type':'application/json'},body:body?JSON.stringify(body):undefined});return {status:r.status,data:await r.json()}}
  try{
-  const mat=Catalog.materialOptions('suits').join(', '),draft={name:'Тест материалов',cat:'clothes',sub:'suits',section:'suits-two',a:{gender:'Унисекс',ageGroup:'Детское',made:'Другая',mat},material:mat,row:'1',shopNum:'1',shopName:'Тест',photos:['data:image/png;base64,AA=='],sizes:spec('age','3','4')};
+  const mat=Catalog.materialOptions('suits').join(', '),draft={desc:'Качественная одежда для повседневной носки',name:'Тест материалов',cat:'clothes',sub:'suits',section:'suits-two',a:{gender:'Унисекс',ageGroup:'Детское',made:'Другая',mat},material:mat,row:'1',shopNum:'1',shopName:'Тест',photos:['data:image/png;base64,AA=='],sizes:spec('age','3','4')};
   const r=await api('/listings','POST',draft);assert.equal(r.status,200);assert.equal(r.data.a.mat,mat);assert.equal(r.data.material,mat);assert.equal(r.data.a.made,'Другая');
   assert.equal((await api('/listings/'+r.data.id)).data.a.mat,mat);
   const updated=await api('/listings/'+r.data.id,'PUT',{a:{...draft.a,mat:'Джинса (деним), Трикотаж, Флис'},material:'Джинса (деним), Трикотаж, Флис'});
