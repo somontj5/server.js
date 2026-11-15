@@ -13,6 +13,13 @@ public class Bridge {
     try{int comma=src.indexOf(',');String mime=src.substring(5,src.indexOf(';'));
       activity.saveImage(android.util.Base64.decode(src.substring(comma+1),android.util.Base64.DEFAULT),mime);
     }catch(IllegalArgumentException e){activity.imageToast("Фото повреждено");}}
+  @JavascriptInterface public void setTheme(final boolean dark){activity.runOnUiThread(new Runnable(){public void run(){
+    int color=dark?0xff101a17:0xfff7f8f2;activity.getWindow().setStatusBarColor(color);activity.getWindow().setNavigationBarColor(color);
+    int flags=activity.getWindow().getDecorView().getSystemUiVisibility();
+    if(android.os.Build.VERSION.SDK_INT>=23){if(dark)flags&=~android.view.View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR;else flags|=android.view.View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR;}
+    if(android.os.Build.VERSION.SDK_INT>=26){if(dark)flags&=~android.view.View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR;else flags|=android.view.View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR;}
+    activity.getWindow().getDecorView().setSystemUiVisibility(flags);
+  }});}
   @JavascriptInterface public void clearAuth(){MsgService.stop(c);}
   @JavascriptInterface public boolean notifOn(){return android.os.Build.VERSION.SDK_INT<33||c.checkSelfPermission("android.permission.POST_NOTIFICATIONS")==0;}
 }

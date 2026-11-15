@@ -19,7 +19,7 @@ const assert = require('assert/strict');
         return route.fulfill({status:response.status,contentType:'application/json',body:await response.text()});
       }
       if (url.hostname === 'gm.test') {
-        const file = ['validation.js','categories.js','sizes.js','sizes-ui.js','chat-media.js','messenger.js','messenger.css','sugd.css','sugd-logo.svg'].find(x=>url.pathname==='/'+x)||'index.html';
+        const file = ['theme.js','validation.js','categories.js','sizes.js','sizes-ui.js','chat-media.js','messenger.js','messenger.css','sugd.css','sugd-logo.svg'].find(x=>url.pathname==='/'+x)||'index.html';
         return route.fulfill({contentType:file.endsWith('.svg')?'image/svg+xml':file.endsWith('.js')?'application/javascript':file.endsWith('.css')?'text/css':'text/html',body:fs.readFileSync('android-src/assets/www/'+file)});
       }
       if (/github/.test(url.hostname)) return route.fulfill({contentType:'text/plain',body:'https://gm.test/api'});
@@ -119,8 +119,8 @@ const assert = require('assert/strict');
     await page.click('[data-cat="bags"]');
     assert.equal(await page.locator('#f-a_size').count(),0);
     assert.equal(await page.locator('[data-size-action="parse"]').count(),0);
-    assert.equal(await page.locator('select.color-select').count(),1);
-    await page.selectOption('select.color-select','Синий');assert.equal(await page.evaluate(()=>F.a.color),'Синий');
+    assert.equal(await page.locator('#sellPg select.color-select').count(),1);
+    await page.selectOption('#sellPg select.color-select','Синий');assert.equal(await page.evaluate(()=>F.a.color),'Синий');
     const phone=page.locator('#sellPg [data-k="phone"]');
     await phone.fill('901234567');await phone.press('End');
     for(let i=0;i<20;i++)await phone.press('Backspace');

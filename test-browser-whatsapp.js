@@ -18,7 +18,7 @@ const fs=require('node:fs'),assert=require('node:assert/strict');
     return reply(confirmed?{status:'ok',token:'mock-verified-token',user:{id:'wa-user',phone:'+992901234567'}}:{status:'pending'});
    }
    if(u.pathname.startsWith('/api/'))return reply(u.pathname==='/api/me'?{id:'wa-user',phone:'+992901234567'}:{items:[],total:0});
-   const name=['categories.js','sizes.js','sizes-ui.js','validation.js','chat-media.js','messenger.js','messenger.css','sugd.css','sugd-logo.svg'].find(n=>u.pathname==='/'+n)||'index.html';
+   const name=['theme.js','categories.js','sizes.js','sizes-ui.js','validation.js','chat-media.js','messenger.js','messenger.css','sugd.css','sugd-logo.svg'].find(n=>u.pathname==='/'+n)||'index.html';
    return route.fulfill({contentType:name.endsWith('.svg')?'image/svg+xml':name.endsWith('.css')?'text/css':name.endsWith('.js')?'text/javascript':'text/html',body:fs.readFileSync('android-src/assets/www/'+name)});
   });
   await page.addInitScript(()=>localStorage.setItem('gm_srv','https://gm.test/api'));
