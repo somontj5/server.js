@@ -1,4 +1,4 @@
-// СтеклоМаркет — тестовый сервер. Без зависимостей, Node 20+.
+// SUGD.TJ — тестовый сервер. Без зависимостей, Node 20+.
 // Вход: через Telegram-бота (подтверждение номера телефона). Уведомления — тоже в Telegram.
 // Сторож: при падении сервер перезапускается сам (не ждём следующего запуска workflow)
 if (!process.env.GM_CHILD) {
@@ -78,13 +78,13 @@ async function onMessage(m) {
       user.chatId = chat; user.username = m.from.username || '';
       user.name = user.name || [m.from.first_name, m.from.last_name].filter(Boolean).join(' ');
       Object.assign(db.codes[code], { chat, status:'ok', userId:user.id }); touch();
-      await say(chat, '✅ Вы вошли в СтеклоМаркет как ' + (user.name || 'пользователь') + '.\nВернитесь в приложение — вход уже выполнен.');
+      await say(chat, '✅ Вы вошли в SUGD.TJ как ' + (user.name || 'пользователь') + '.\nВернитесь в приложение — вход уже выполнен.');
       if (!user.phone) return say(chat, 'Хотите, чтобы покупатели могли позвонить? Поделитесь номером (необязательно) 👇', {
         reply_markup:{ keyboard:[[{ text:'📱 Поделиться номером', request_contact:true }]], resize_keyboard:true, one_time_keyboard:true } });
       return;
     }
     if (code && code.startsWith('l_')) return sendCard(chat, code.slice(2));
-    return say(chat, 'Это бот входа в СтеклоМаркет.\nНажмите «Войти через Telegram» в приложении.' + (PUB ? '\n\nАдрес сервера: ' + PUB : ''));
+    return say(chat, 'Это бот входа в SUGD.TJ.\nНажмите «Войти через Telegram» в приложении.' + (PUB ? '\n\nАдрес сервера: ' + PUB : ''));
   }
   if (text === '/url') return say(chat, PUB || 'Адрес сервера не задан');
   if (text === '/stop') { const u = Object.values(db.users).find(x => x.tgId === m.from.id); if (u) { u.mute = true; touch(); } return say(chat, '🔕 Уведомления выключены. /notify — включить.'); }
@@ -95,7 +95,7 @@ async function sendCard(chat, id) {
   const l = db.listings[id];
   if (!l || l.archived) return say(chat, '😔 Объявление снято с публикации или удалено.');
   const s = db.users[l.sellerId] || {}, ph = l.contact && l.contact !== 'chat' ? (l.phone || s.phone || '') : '';
-  const cap = `${l.name}\n💰 ${l.price || 'цена не указана'}\n📍 ${l.bazaar ? 'Базар ' + l.bazaar + ', ' : ''}Ряд ${l.row}, магазин №${l.shopNum} (${l.shopName})` + (ph ? `\n📞 ${ph}` : '') + (l.desc ? `\n\n${l.desc.slice(0, 600)}` : '') + '\n\nНаписать продавцу можно в приложении СтеклоМаркет.';
+  const cap = `${l.name}\n💰 ${l.price || 'цена не указана'}\n📍 ${l.bazaar ? 'Базар ' + l.bazaar + ', ' : ''}Ряд ${l.row}, магазин №${l.shopNum} (${l.shopName})` + (ph ? `\n📞 ${ph}` : '') + (l.desc ? `\n\n${l.desc.slice(0, 600)}` : '') + '\n\nНаписать продавцу можно в приложении SUGD.TJ.';
   const p = l.photos[0];
   try {
     if (p && p.startsWith('http')) { const r = await tg('sendPhoto', { chat_id: chat, photo: p, caption: cap.slice(0, 1024) }); if (r.ok) return; }
@@ -318,7 +318,7 @@ async function igLoad(un) {
   const prev = IGC[un] || {}; // при ошибке оставляем прошлые данные
   IGC[un] = { t: ex === null && !d ? (prev.t || 0) : now(), d: ex === false ? null : (d || prev.d || null), ex: ex === null ? (prev.ex === undefined ? null : prev.ex) : ex };
 }
-const meUser = u => Object.assign(pubUser(u), { phone:u.phone });
+const meUser = u => Object.assign(pubUser(u), { phone:u.phone, guest:!!u.guest });
 function rating(uid) { const a = db.reviews.filter(r => r.sellerId === uid); return { n:a.length, avg: a.length ? +(a.reduce((s,r)=>s+r.stars,0)/a.length).toFixed(2) : 0 }; }
 const dayKey = () => new Date().toISOString().slice(0,10);
 function bump(l, k) { if (!l) return; l.st = l.st || {}; const d = dayKey(); const o = l.st[d] = l.st[d] || {}; o[k] = (o[k]||0) + 1;
@@ -430,7 +430,7 @@ const route = (m, p, auth, h) => routes.push({ m, re: new RegExp('^' + p.replace
 class E extends Error { constructor(c, m) { super(m); this.code = c; } }
 const need = (c, m) => { throw new E(c, m); };
 
-route('GET', '/', 0, () => ({ ok:true, app:'GlassMarket', bot: BOT ? '@' + BOT : null, time: now() }));
+route('GET', '/', 0, () => ({ ok:true, app:'SUGD.TJ', bot: BOT ? '@' + BOT : null, time: now() }));
 route('GET', '/health', 0, () => ({ ok:true }));
 route('GET', '/categories', 0, () => ({ items: Catalog.items }));
 
@@ -438,6 +438,31 @@ route('GET', '/categories', 0, () => ({ items: Catalog.items }));
 const waAuth = require('./whatsapp-auth')({ db, persist: () => { touch(); flush(); }, userOut: meUser });
 route('POST', '/auth/whatsapp/start', 0, (q,b,u,req) => waAuth.start(req));
 route('POST', '/auth/whatsapp/check', 0, (q,b,u,req) => waAuth.check(req,b));
+
+// Guest accounts use ordinary sessions and all ordinary user APIs, never admin roles.
+// The random 256-bit device secret is a bearer credential; only its hash is persisted.
+const guestRate = new Map();
+route('POST', '/auth/guest', 0, (q, b, u, req) => {
+  if (typeof b.deviceKey !== 'string' || !/^[a-f0-9]{64}$/.test(b.deviceKey)) need(400, 'Неверный ключ гостевого аккаунта');
+  const key = crypto.createHash('sha256').update(b.deviceKey).digest('hex');
+  const accounts = db.guestAccounts = db.guestAccounts || {};
+  let account = accounts[key], user = account && db.users[account.userId];
+  if (!user) {
+    const ip = req.socket.remoteAddress || 'unknown', t = now();
+    for (const [k,v] of guestRate) if (t - v.t > 3600e3) guestRate.delete(k);
+    const rate = guestRate.get(ip) || { t, n:0 };
+    if (rate.n >= 40 || (!guestRate.has(ip) && guestRate.size >= 2000)) need(429, 'Слишком много новых аккаунтов. Попробуйте позже.');
+    rate.n++; guestRate.set(ip,rate);
+    user = { id:rid(12), name:'Гость', guest:true, createdAt:t, shopName:'', row:'', shopNum:'', phone:'' };
+    db.users[user.id] = user; account = accounts[key] = { userId:user.id };
+  }
+  if (!user.guest) need(403, 'Недоступный аккаунт');
+  if (!account.token || !db.sessions[account.token] || db.sessions[account.token].userId !== user.id) {
+    account.token = rid(32); db.sessions[account.token] = { userId:user.id, createdAt:now() };
+  }
+  touch(); flush();
+  return { status:'ok', token:account.token, user:meUser(user) };
+});
 
 // --- Вход через Telegram ---
 route('POST', '/auth/start', 0, () => {
@@ -831,10 +856,10 @@ http.createServer((req, res) => {
   if (lm) {
     const l = db.listings[lm[1]], esc = v => String(v || '').replace(/[&<>"]/g, c => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;' })[c]);
     const appLink = 'glassmarket://listing/' + encodeURIComponent(lm[1]);
-    const download = 'https://github.com/somontj5/server.js/raw/main/apk/GlassMarket9.17.apk';
+    const download = 'https://github.com/somontj5/server.js/raw/main/apk/SUGD.TJ-9.18.apk';
     const intent = 'intent://listing/' + encodeURIComponent(lm[1]) + '#Intent;scheme=glassmarket;package=ru.glassmarket.app;S.browser_fallback_url=' + encodeURIComponent(download) + ';end';
     const html = l && !l.archived ? `<!doctype html><meta charset=utf-8><meta name=viewport content="width=device-width,initial-scale=1"><title>${esc(l.name)}</title><meta property="og:title" content="${esc(l.name + ' — ' + (l.price||''))}"><meta property="og:description" content="${esc('Ряд ' + l.row + ', магазин №' + l.shopNum)}">
-<body style="font-family:sans-serif;max-width:520px;margin:auto;padding:12px">${l.photos[0] ? `<img src="/l/${esc(l.id)}/photo" style="width:100%;border-radius:12px">` : ''}<h2>${esc(l.name)}</h2><h3>${esc(l.price || 'цена не указана')}</h3><p>📍 ${l.bazaar ? 'Базар ' + esc(l.bazaar) + ', ' : ''}Ряд ${esc(l.row)}, магазин №${esc(l.shopNum)} (${esc(l.shopName)})</p>${l.material ? `<p>🧵 Материал: ${esc(l.material)}</p>` : ''}<p style="white-space:pre-wrap">${esc(l.desc)}</p><a id="openApp" href="${esc(intent)}" style="display:block;text-align:center;background:#00aaff;color:#fff;padding:14px;border-radius:12px;text-decoration:none">Открыть в СтеклоМаркет</a><p style="text-align:center"><a href="${download}">Скачать приложение 9.17</a></p><p style="color:#777;font-size:13px">Если приложение не открылось автоматически, нажмите кнопку выше.</p><script>if(/Android/i.test(navigator.userAgent))location.href=${JSON.stringify(appLink)};</script></body>`
+<body style="font-family:sans-serif;max-width:520px;margin:auto;padding:12px">${l.photos[0] ? `<img src="/l/${esc(l.id)}/photo" style="width:100%;border-radius:12px">` : ''}<h2>${esc(l.name)}</h2><h3>${esc(l.price || 'цена не указана')}</h3><p>📍 ${l.bazaar ? 'Базар ' + esc(l.bazaar) + ', ' : ''}Ряд ${esc(l.row)}, магазин №${esc(l.shopNum)} (${esc(l.shopName)})</p>${l.material ? `<p>🧵 Материал: ${esc(l.material)}</p>` : ''}<p style="white-space:pre-wrap">${esc(l.desc)}</p><a id="openApp" href="${esc(intent)}" style="display:block;text-align:center;background:#075b46;color:#fff;padding:14px;border-radius:12px;text-decoration:none">Открыть в SUGD.TJ</a><p style="text-align:center"><a href="${download}">Скачать SUGD.TJ 9.18</a></p><p style="color:#777;font-size:13px">Если приложение не открылось автоматически, нажмите кнопку выше.</p><script>if(/Android/i.test(navigator.userAgent))location.href=${JSON.stringify(appLink)};</script></body>`
       : '<!doctype html><meta charset=utf-8><h3 style="font-family:sans-serif">Объявление снято с публикации</h3>';
     res.writeHead(l && !l.archived ? 200 : 404, { 'content-type': 'text/html; charset=utf-8', 'cache-control':'no-store', 'x-content-type-options':'nosniff' }); return res.end(html);
   }

@@ -7,17 +7,20 @@ B=R/'.local-build/native'; B.mkdir(parents=True,exist_ok=True)
 SDK=pathlib.Path(os.environ.get('ANDROID_HOME',str(R/'.local-build/sdk')))
 T=pathlib.Path(os.environ.get('BUILD_TOOLS',str(SDK/'build-tools/35.0.0'))); J=pathlib.Path(os.environ.get('ANDROID_JAR',str(SDK/'platforms/android-35/android.jar')))
 version=ET.parse(R/'android-src/AndroidManifest.xml').getroot().attrib['{http://schemas.android.com/apk/res/android}versionName']
-output=R/('apk/GlassMarket'+version+'-unsigned.apk')
+output=R/('apk/SUGD.TJ-'+version+'-unsigned.apk')
 def run(*args): subprocess.run([str(x) for x in args],check=True)
 res=B/'res'; (res/'values').mkdir(parents=True,exist_ok=True)
-(res/'values/strings.xml').write_text('<resources><string name="app_name">СтеклоМаркет</string></resources>')
+(res/'values/strings.xml').write_text('<resources><string name="app_name">SUGD.TJ</string></resources>')
 with zipfile.ZipFile(R/os.environ.get('BASE_APK','apk/GlassMarket9.13.apk')) as old:
  for name in old.namelist():
   if name.startswith('res/mipmap-') and name.endswith('/ic_launcher.png'):
    folder=name.split('/')[1].replace('-v4','');p=res/folder/'ic_launcher.png';p.parent.mkdir(exist_ok=True);p.write_bytes(old.read(name))
+# Prefer the versioned SUGD.TJ launcher artwork over the legacy base icons.
+for icon in (R/'android-src/res').glob('mipmap-*/ic_launcher.png'):
+ target=res/icon.parent.name/icon.name;target.parent.mkdir(exist_ok=True);target.write_bytes(icon.read_bytes())
 classes=B/'classes';classes.mkdir(exist_ok=True)
 run(T/'aapt','package','-f','-M',R/'android-src/AndroidManifest.xml','-S',res,'-I',J,'-F',B/'base.apk')
-compiler=['java','-jar',os.environ['ECJ_JAR']] if os.environ.get('ECJ_JAR') else ['javac']
+compiler=['java','-jar',os.environ['ECJ_JAR']] if os.environ.get('ECJ_JAR') else ['java','com.sun.tools.javac.Main']
 run(*compiler,'-source','8','-target','8','-encoding','UTF-8','-bootclasspath',J,'-d',classes,*sorted((R/'android-src/src').rglob('*.java')))
 run(T/'d8','--min-api','24','--lib',J,'--output',B,*sorted(classes.rglob('*.class')))
 with zipfile.ZipFile(B/'base.apk') as old, zipfile.ZipFile(B/'unsigned.apk','w') as out:

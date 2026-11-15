@@ -19,8 +19,8 @@ const assert = require('assert/strict');
         return route.fulfill({status:response.status,contentType:'application/json',body:await response.text()});
       }
       if (url.hostname === 'gm.test') {
-        const file = ['validation.js','categories.js','sizes.js','sizes-ui.js','chat-media.js','messenger.js','messenger.css'].find(x=>url.pathname==='/'+x)||'index.html';
-        return route.fulfill({contentType:file.endsWith('.js')?'application/javascript':file.endsWith('.css')?'text/css':'text/html',body:fs.readFileSync('android-src/assets/www/'+file)});
+        const file = ['validation.js','categories.js','sizes.js','sizes-ui.js','chat-media.js','messenger.js','messenger.css','sugd.css','sugd-logo.svg'].find(x=>url.pathname==='/'+x)||'index.html';
+        return route.fulfill({contentType:file.endsWith('.svg')?'image/svg+xml':file.endsWith('.js')?'application/javascript':file.endsWith('.css')?'text/css':'text/html',body:fs.readFileSync('android-src/assets/www/'+file)});
       }
       if (/github/.test(url.hostname)) return route.fulfill({contentType:'text/plain',body:'https://gm.test/api'});
       return route.abort();
@@ -218,8 +218,10 @@ const assert = require('assert/strict');
     await guest.goto('https://gm.test/#profile');await guest.waitForSelector('#authBtn');
     assert.equal(await guest.locator('#authBtn .lt').innerText(),'Войти');
     assert.equal(await guest.locator('#authBtn svg').innerHTML(),await guest.evaluate(()=>{var svg=document.createElementNS('http://www.w3.org/2000/svg','svg');svg.innerHTML=P.login;return svg.innerHTML}));
+    if(await guest.locator('#tgAuth').count())await guest.click('#taLater');
     await guest.click('#authBtn');await guest.waitForSelector('#tgAuth');
-    assert.equal(await guest.locator('#tgAuth .marketplace-logo svg').innerHTML(),await guest.evaluate(()=>{var svg=document.createElementNS('http://www.w3.org/2000/svg','svg');svg.innerHTML=P.bag;return svg.innerHTML}));
+    assert.equal(await guest.locator('#tgAuth .marketplace-logo img').getAttribute('src'),'sugd-logo.svg');
+    assert.equal(await guest.locator('#guestGo').count(),1);
     assert.equal(await guest.locator('#waGo svg').count(),1);assert.equal(await guest.locator('#taGo svg').count(),1);
     assert.ok(!(await guest.locator('#tgAuth').innerText()).includes('Отправьте готовый код'));
     for(const width of [320,390,480]){

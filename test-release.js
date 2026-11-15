@@ -14,7 +14,7 @@ test('Client scripts parse, size-recognition action removed, native links compil
  for(const x of html.matchAll(/<script(?: [^>]*)?>([\s\S]*?)<\/script>/g))new vm.Script(x[1]);
  assert.ok(html.includes('id="f-desc"'));assert.ok(html.includes('minlength="20"'));assert.ok(html.includes('select class="inp color-select"'));
  assert.ok(!fs.readFileSync('android-src/assets/www/sizes-ui.js','utf8').includes('Распознать'));
- const manifest=fs.readFileSync('android-src/AndroidManifest.xml','utf8');assert.ok(manifest.includes('android:scheme="glassmarket"'));assert.ok(manifest.includes('versionName="9.17"'));
+ const manifest=fs.readFileSync('android-src/AndroidManifest.xml','utf8');assert.ok(manifest.includes('android:scheme="glassmarket"'));assert.ok(manifest.includes('versionName="9.18"'));
 });
 test('Cold and warm recommendations avoid seller/category monopolies when alternatives exist',()=>{
  const code=fs.readFileSync('server.js','utf8'),a=code.indexOf('function recommend('),b=code.indexOf('// Gemini вызывается',a);
@@ -44,7 +44,7 @@ test('Live API validates create/update/profile atomically, keeps long descriptio
   assert.equal((await api('/me','PUT',{name:'Ҷамшед Oʻtkir'})).status,200);
   await api('/me/interests','DELETE',undefined,'test-buyer');await api('/listings/'+id,'GET',undefined,'test-buyer');const before=(await api('/me/interests','GET',undefined,'test-buyer')).data;
   await api('/listings/'+id,'GET',undefined,'test-buyer');const after=(await api('/me/interests','GET',undefined,'test-buyer')).data;assert.deepEqual(after,before);
-  const page=await fetch(s.base+'/l/'+id),html=await page.text();assert.equal(page.status,200);assert.ok(html.includes('glassmarket://listing/'+id));assert.ok(html.includes('package=ru.glassmarket.app'));assert.ok(html.includes('Скачать приложение 9.17'));
+  const page=await fetch(s.base+'/l/'+id),html=await page.text();assert.equal(page.status,200);assert.ok(html.includes('glassmarket://listing/'+id));assert.ok(html.includes('package=ru.glassmarket.app'));assert.ok(html.includes('Скачать SUGD.TJ 9.18'));
   await api('/listings/'+id+'/archive','POST');assert.equal((await fetch(s.base+'/l/'+id)).status,404);
  }finally{await s.stop()}
 });
@@ -87,4 +87,30 @@ test('Messenger sources parse and native transient notification always has clean
  new vm.Script(fs.readFileSync('android-src/assets/www/messenger.js','utf8'));
  const native=fs.readFileSync('android-src/src/ru/glassmarket/app/MsgService.java','utf8');assert.ok(native.includes('Поиск новых сообщений'));assert.ok(native.includes('finally{nm.cancel(CHECK_ID);POLLING.set(false);}'));assert.ok(native.includes('IMPORTANCE_LOW'));assert.ok(native.includes('setTimeoutAfter(20000)'));
  const css=fs.readFileSync('android-src/assets/www/messenger.css','utf8');assert.ok(css.includes('prefers-reduced-motion'));assert.ok(css.includes('Animation inventory'));
+});
+
+test('SUGD guest: private resumable identity, full marketplace access, no privilege escalation',async()=>{
+ const s=await start(0);
+ async function api(path,method='GET',body,token=''){const r=await fetch(s.base+path,{method,headers:{'content-type':'application/json',authorization:'Bearer '+token},body:body?JSON.stringify(body):undefined});return {status:r.status,data:await r.json()}}
+ try{
+  assert.equal((await api('/auth/guest','POST',{})).status,400);
+  const key='a'.repeat(64),g=await api('/auth/guest','POST',{deviceKey:key,admin:true,userId:'seller'});assert.equal(g.status,200);assert.ok(g.data.token);assert.equal(g.data.user.guest,true);assert.notEqual(g.data.user.id,'seller');assert.ok(!JSON.stringify(g.data).includes(key));
+  const token=g.data.token,uid=g.data.user.id;
+  assert.equal((await api('/auth/guest','POST',{deviceKey:key})).data.token,token);
+  const other=(await api('/auth/guest','POST',{deviceKey:'b'.repeat(64)})).data;assert.notEqual(other.user.id,uid);
+  assert.equal((await api('/me','GET',null,token)).data.id,uid);
+  assert.equal((await api('/tags','GET',null,token)).status,403);
+  assert.equal((await api('/listings/base','PUT',{name:'Чужая вещь'},token)).status,403);
+  assert.equal((await api('/favorites/base','POST',{},token)).status,200);
+  assert.equal((await api('/favorites','GET',null,token)).data.items.length,1);
+  const tid=(await api('/listings/base/thread','POST',{},token)).data.id;assert.ok(tid);
+  assert.equal((await api('/threads/'+tid+'/messages','POST',{text:'Здравствуйте! Можно замеры?'},token)).status,200);
+  assert.equal((await api('/threads/'+tid,'GET',null,other.token)).status,403);
+  const draft={name:'Хлопковая футболка',desc:'Мягкая хлопковая футболка для повседневной носки.',cat:'clothes',sub:'tops',section:'tops-tees',row:'2',shopNum:'9876',shopName:'Мой магазин',photos:['data:image/png;base64,AA=='],ways:[]};
+  const made=await api('/listings','POST',draft,token);assert.equal(made.status,200,JSON.stringify(made.data));assert.equal(made.data.sellerId,uid);
+  assert.equal((await api('/my/stats','GET',null,token)).status,200);
+  assert.equal((await api('/me','PUT',{name:'Фарид'},token)).status,200);
+  await api('/auth/logout','POST',{},token);assert.equal((await api('/me','GET',null,token)).status,401);
+  const resume=(await api('/auth/guest','POST',{deviceKey:key})).data;assert.equal(resume.user.id,uid);assert.equal(resume.user.name,'Фарид');assert.notEqual(resume.token,token);
+ }finally{await s.stop()}
 });

@@ -24,7 +24,7 @@ public class MsgService {
     try{ConnectivityManager cm=(ConnectivityManager)c.getSystemService(Context.CONNECTIVITY_SERVICE);NetworkCapabilities net=cm.getNetworkCapabilities(cm.getActiveNetwork());
       if(net==null||!net.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET))return;
       if(Build.VERSION.SDK_INT>=26){NotificationChannel ch=new NotificationChannel(CHECK_CH,"Проверка сообщений",NotificationManager.IMPORTANCE_LOW);ch.setSound(null,null);ch.enableVibration(false);ch.setShowBadge(false);nm.createNotificationChannel(ch);}
-      Notification.Builder b=nb(c,CHECK_CH).setSmallIcon(android.R.drawable.stat_notify_sync).setContentTitle("Поиск новых сообщений").setContentText("СтеклоМаркет").setOngoing(true).setOnlyAlertOnce(true).setShowWhen(false).setContentIntent(open(c,null,CHECK_ID)).setPriority(Notification.PRIORITY_MIN);
+      Notification.Builder b=nb(c,CHECK_CH).setSmallIcon(android.R.drawable.stat_notify_sync).setContentTitle("Поиск новых сообщений").setContentText("SUGD.TJ").setOngoing(true).setOnlyAlertOnce(true).setShowWhen(false).setContentIntent(open(c,null,CHECK_ID)).setPriority(Notification.PRIORITY_MIN);
       if(Build.VERSION.SDK_INT>=26)b.setTimeoutAfter(20000);
       try{nm.notify(CHECK_ID,b.build());}catch(SecurityException ignored){}
       new MsgService(c).poll();
