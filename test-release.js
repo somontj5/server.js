@@ -14,7 +14,7 @@ test('Client scripts parse, size-recognition action removed, native links compil
  for(const x of html.matchAll(/<script(?: [^>]*)?>([\s\S]*?)<\/script>/g))new vm.Script(x[1]);
  assert.ok(html.includes('id="f-desc"'));assert.ok(html.includes('minlength="20"'));assert.ok(html.includes('select class="inp color-select"'));
  assert.ok(!fs.readFileSync('android-src/assets/www/sizes-ui.js','utf8').includes('Распознать'));
- const manifest=fs.readFileSync('android-src/AndroidManifest.xml','utf8');assert.ok(manifest.includes('android:scheme="glassmarket"'));assert.ok(manifest.includes('versionName="9.20"'));
+ const manifest=fs.readFileSync('android-src/AndroidManifest.xml','utf8');assert.ok(manifest.includes('android:scheme="glassmarket"'));assert.ok(manifest.includes('versionName="9.21"'));assert.ok(manifest.includes('versionCode="111"'));
 });
 test('Cold and warm recommendations avoid seller/category monopolies when alternatives exist',()=>{
  const code=fs.readFileSync('server.js','utf8'),a=code.indexOf('function recommend('),b=code.indexOf('// Gemini вызывается',a);
@@ -44,7 +44,7 @@ test('Live API validates create/update/profile atomically, keeps long descriptio
   assert.equal((await api('/me','PUT',{name:'Ҷамшед Oʻtkir'})).status,200);
   await api('/me/interests','DELETE',undefined,'test-buyer');await api('/listings/'+id,'GET',undefined,'test-buyer');const before=(await api('/me/interests','GET',undefined,'test-buyer')).data;
   await api('/listings/'+id,'GET',undefined,'test-buyer');const after=(await api('/me/interests','GET',undefined,'test-buyer')).data;assert.deepEqual(after,before);
-  const page=await fetch(s.base+'/l/'+id),html=await page.text();assert.equal(page.status,200);assert.ok(html.includes('glassmarket://listing/'+id));assert.ok(html.includes('package=ru.glassmarket.app'));assert.ok(html.includes('Скачать SUGD.TJ 9.20'));
+  const page=await fetch(s.base+'/l/'+id),html=await page.text();assert.equal(page.status,200);assert.ok(html.includes('glassmarket://listing/'+id));assert.ok(html.includes('package=ru.glassmarket.app'));assert.ok(html.includes('Скачать SUGD.TJ 9.21'));
   await api('/listings/'+id+'/archive','POST');assert.equal((await fetch(s.base+'/l/'+id)).status,404);
  }finally{await s.stop()}
 });
@@ -83,9 +83,10 @@ test('Message retries are idempotent, media stays private, audio can be restored
   assert.equal((await api('/threads','GET',undefined,'test-admin')).data.items.length,0);
  }finally{await s.stop()}
 });
-test('Messenger sources parse and native transient notification always has cleanup',()=>{
+test('Messenger sources parse and native message notifications use private MessagingStyle without polling clutter',()=>{
  new vm.Script(fs.readFileSync('android-src/assets/www/messenger.js','utf8'));
- const native=fs.readFileSync('android-src/src/ru/glassmarket/app/MsgService.java','utf8');assert.ok(native.includes('Поиск новых сообщений'));assert.ok(native.includes('finally{nm.cancel(CHECK_ID);POLLING.set(false);}'));assert.ok(native.includes('IMPORTANCE_LOW'));assert.ok(native.includes('setTimeoutAfter(20000)'));
+ const native=fs.readFileSync('android-src/src/ru/glassmarket/app/MsgService.java','utf8');assert.ok(native.includes('Notification.MessagingStyle'));assert.ok(native.includes('VISIBILITY_PRIVATE'));assert.ok(!native.includes('setOngoing(true)'));assert.ok(native.includes('POLLING.set(false)'));
+
  const css=fs.readFileSync('android-src/assets/www/messenger.css','utf8');assert.ok(css.includes('prefers-reduced-motion'));assert.ok(css.includes('Animation inventory'));
 });
 
@@ -115,7 +116,7 @@ test('SUGD guest: private resumable identity, full marketplace access, no privil
  }finally{await s.stop()}
 });
 
-test('9.20 sector is exactly one supported letter, persists and rejects invalid updates atomically',async()=>{
+test('9.21 sector is exactly one supported letter, persists and rejects invalid updates atomically',async()=>{
  const s=await start(19900+Math.floor(Math.random()*50));
  async function api(path,method='GET',body){const r=await fetch(s.base+path,{method,headers:{authorization:'Bearer test-seller','content-type':'application/json'},body:body?JSON.stringify(body):undefined});return {status:r.status,data:await r.json()}}
  try{
@@ -135,7 +136,7 @@ test('9.20 sector is exactly one supported letter, persists and rejects invalid 
 });
 
 
-test('9.20 tags separate materials, respect children and negation, and never infer outfits from quantities',()=>{
+test('9.21 tags separate materials, respect children and negation, and never infer outfits from quantities',()=>{
  const T=require('./tags');
  const a=T.layer1({sub:'suits',a:{ageGroup:'Детское',gender:'Женское',mat:'Бамбук, Флис'}});
  assert.ok(a.includes('детское'));assert.ok(!a.includes('взрослое'));assert.ok(a.includes('бамбук'));assert.ok(a.includes('флис'));assert.ok(!a.includes('бамбук флис'));
@@ -145,7 +146,7 @@ test('9.20 tags separate materials, respect children and negation, and never inf
  assert.ok(!T.layer2('Хлопковая футболка без вышивки').tags.includes('вышивка'));
  assert.ok(!T.layer2('шуберт бамбуковоз').tags.includes('шуба'));
 });
-test('9.20 similar listings exclude cross-category material/country matches and preserve dictionary synonyms',async()=>{
+test('9.21 similar listings exclude cross-category material/country matches and preserve dictionary synonyms',async()=>{
  const s=await start(0);async function api(path,method='GET',body,token='test-seller'){const r=await fetch(s.base+path,{method,headers:{authorization:'Bearer '+token,'content-type':'application/json'},body:body?JSON.stringify(body):undefined});assert.equal(r.status,200,await r.clone().text());return r.json()}
  try{
   const draft={cat:'clothes',sub:'tops',section:'tops-tees',name:'Хлопковая футболка',desc:'Удобная хлопковая футболка для повседневной носки',shopName:'Тест',row:'1',shopNum:'1',photos:['data:image/png;base64,AA=='],material:'Хлопок',a:{gender:'Женское',ageGroup:'Взрослое',mat:'Хлопок',made:'Турция'}};
