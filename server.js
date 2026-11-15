@@ -29,6 +29,8 @@ setInterval(flush, 3000);
 const rid = (n=6) => crypto.randomBytes(n).toString('hex');
 const now = () => Date.now();
 const str = (v, max=200) => (v == null ? '' : String(v)).trim().slice(0, max);
+const Pricing = require('./android-src/assets/www/pricing.js');
+const effectivePrice = l => Pricing.effective(l);
 const priceNum = p => { const m = String(p||'').replace(/\s/g,'').match(/\d+([.,]\d+)?/); return m ? parseFloat(m[0].replace(',','.')) : null; };
 // Таджикистан: +992 и ровно 9 цифр; ряд и магазин — только цифры
 const onlyDigits = v => String(v == null ? '' : v).replace(/\D/g, '');
@@ -67,7 +69,7 @@ async function onMessage(m) {
     const user = Object.values(db.users).find(x => x.tgId === m.from.id);
     if (!user) return say(chat, 'Сначала нажмите «Войти через Telegram» в приложении.', { reply_markup:{ remove_keyboard:true } });
     user.chatId = chat; user.phone = '+' + String(m.contact.phone_number).replace(/\D/g,''); touch();
-    return say(chat, '✅ Номер ' + user.phone + ' сохранён в профиле.', { reply_markup:{ remove_keyboard:true } });
+    return say(chat, 'Номер ' + user.phone + ' сохранён в профиле.', { reply_markup:{ remove_keyboard:true } });
   }
   if (text.startsWith('/start')) {
     const code = text.split(' ')[1];
@@ -78,7 +80,7 @@ async function onMessage(m) {
       user.chatId = chat; user.username = m.from.username || '';
       user.name = user.name || [m.from.first_name, m.from.last_name].filter(Boolean).join(' ');
       Object.assign(db.codes[code], { chat, status:'ok', userId:user.id }); touch();
-      await say(chat, '✅ Вы вошли в SUGD.TJ как ' + (user.name || 'пользователь') + '.\nВернитесь в приложение — вход уже выполнен.');
+      await say(chat, 'Вы вошли в SUGD.TJ как ' + (user.name || 'пользователь') + '.\nВернитесь в приложение — вход уже выполнен.');
       if (!user.phone) return say(chat, 'Хотите, чтобы покупатели могли позвонить? Поделитесь номером (необязательно) 👇', {
         reply_markup:{ keyboard:[[{ text:'📱 Поделиться номером', request_contact:true }]], resize_keyboard:true, one_time_keyboard:true } });
       return;
@@ -88,14 +90,14 @@ async function onMessage(m) {
   }
   if (text === '/url') return say(chat, PUB || 'Адрес сервера не задан');
   if (text === '/stop') { const u = Object.values(db.users).find(x => x.tgId === m.from.id); if (u) { u.mute = true; touch(); } return say(chat, '🔕 Уведомления выключены. /notify — включить.'); }
-  if (text === '/notify') { const u = Object.values(db.users).find(x => x.tgId === m.from.id); if (u) { u.mute = false; touch(); } return say(chat, '🔔 Уведомления включены.'); }
+  if (text === '/notify') { const u = Object.values(db.users).find(x => x.tgId === m.from.id); if (u) { u.mute = false; touch(); } return say(chat, 'Уведомления включены.'); }
 }
 // Карточка объявления в Telegram (ссылка «поделиться» ведёт сюда — она постоянная, в отличие от адреса туннеля)
 async function sendCard(chat, id) {
   const l = db.listings[id];
   if (!l || l.archived) return say(chat, '😔 Объявление снято с публикации или удалено.');
   const s = db.users[l.sellerId] || {}, ph = l.contact && l.contact !== 'chat' ? (l.phone || s.phone || '') : '';
-  const cap = `${l.name}\n💰 ${l.price || 'цена не указана'}\n📍 ${l.bazaar ? 'Базар ' + l.bazaar + ', ' : ''}${l.sector ? 'сектор ' + l.sector + ', ' : ''}Ряд ${l.row}, магазин №${l.shopNum} (${l.shopName})` + (ph ? `\n📞 ${ph}` : '') + (l.desc ? `\n\n${l.desc.slice(0, 600)}` : '') + '\n\nНаписать продавцу можно в приложении SUGD.TJ.';
+  const cap = `${l.name}\nЦена: ${Pricing.text(l)}\n${l.bazaar ? 'Базар ' + l.bazaar + ', ' : ''}${l.sector ? 'сектор ' + l.sector + ', ' : ''}Ряд ${l.row}, магазин №${l.shopNum} (${l.shopName})` + (ph ? `\nТелефон: ${ph}` : '') + (l.desc ? `\n\n${l.desc.slice(0, 600)}` : '') + '\n\nНаписать продавцу можно в приложении SUGD.TJ.';
   const p = l.photos[0];
   try {
     if (p && p.startsWith('http')) { const r = await tg('sendPhoto', { chat_id: chat, photo: p, caption: cap.slice(0, 1024) }); if (r.ok) return; }
@@ -116,7 +118,7 @@ function notify(userId, text) { const u = db.users[userId]; if (u && !u.mute) sa
 // с затуханием (половина за 7 дней), копятся по действиям: просмотр, избранное, чат, поиск.
 const STOP = new Set('для или при без под над все это как что так его она они уже еще очень новый новая новое продам продаю цена торг срочно'.split(' '));
 const stem = w => w.length > 6 ? w.slice(0, w.length - 2) : w;   // «стеклянный» ≈ «стеклянная»
-function words(t) { return (String(t||'').toLowerCase().replace(/ё/g,'е').match(/[a-zа-я0-9]{3,}/g) || []).filter(w => !STOP.has(w) && !/^\d+$/.test(w)).map(stem); }
+function words(t) { return (String(t||'').toLowerCase().replace(/ё/g,'е').replace(/ӯ|ў/g,'у').replace(/қ/g,'к').replace(/ҳ/g,'х').replace(/ҷ/g,'ж').replace(/ӣ/g,'и').replace(/ғ/g,'г').match(/[a-zа-я0-9]{3,}/g) || []).filter(w => !STOP.has(w) && !/^\d+$/.test(w)).map(stem); }
 // Одежда: подкатегория приложения (outer, knit, tops…) + группы синонимов, чтобы «худи» ≈ «толстовка», «кросы» ≈ «кроссовки»
 const SUBS = ['outer','dress','tops','knit','pants','suits','sport','under','home','shoes','bags','acc','kids','other','national','headwear'];
 const SYN = {
@@ -161,11 +163,9 @@ function tagIt(l, inc) {
 }
 function makeTags(l) {
   const t = new Set(['c:' + l.cat]);
-  for (const x of (l.tt || TAGS.visible(l))) t.add('k:' + x);        // теги-словарь: синонимы находят друг друга
+  for (const x of TAGS.indexTags(l)) t.add(x);        // теги-словарь: синонимы находят друг друга
   for (const x of (l.nu || [])) t.add('k:' + x);
-  words(l.name).forEach(w => t.add('w:' + w));
-  words(l.desc).slice(0, 30).forEach(w => t.add('w:' + w));
-  words(l.material).forEach(w => t.add('w:' + w));
+  // Structural characteristics must not be displaced by a verbose description.
   if (l.sub) t.add('g:' + l.sub);
   if (l.section) t.add('d:' + l.section);
   for (const w of words(l.name)) { const g = subOf(w); if (g) t.add('g:' + g); }       // «Худи оверсайз» → g:knit, даже если подкатегория не указана
@@ -173,12 +173,15 @@ function makeTags(l) {
   for (const e of Sizes.read(l).entries) for (const v of e.values) t.add('z:' + e.system + ':' + v);
   (l.ai || []).forEach(x => { t.add('x:' + x); words(x).forEach(w => t.add('w:' + w)); });
   if (l.aiSub) t.add('g:' + l.aiSub); if (l.aiGender) t.add('a:gender:' + l.aiGender); if (l.aiSeason) t.add('a:season:' + l.aiSeason);
-  for (const w of words(l.desc).slice(0, 30)) { const g = subOf(w); if (g && !l.sub) t.add('g:' + g); }                                            // теги от Gemini (если включён)
-  const pt = priceTag(l.price); if (pt) t.add(pt);
+  for (const w of words(l.desc).slice(0, 180)) { const g = subOf(w); if (g && !l.sub) t.add('g:' + g); }                                            // теги от Gemini (если включён)
+  const pt = priceTag(effectivePrice(l)); if (pt) t.add(pt);
   if (l.sellerId) t.add('s:' + l.sellerId);
   if (l.row) t.add('r:' + String(l.row).toLowerCase());
   if (l.bazaar) t.add('w:' + l.bazaar.toLowerCase());
-  return [...t].slice(0, 60);
+  words(l.name).forEach(w => t.add('w:' + w));
+  words(l.material).forEach(w => t.add('w:' + w));
+  words(l.desc).slice(0, 180).forEach(w => t.add('w:' + w));
+  return [...t].slice(0, 320);
 }
 const HALF = 7 * 864e5, W = { view:1, fav:4, unfav:-3, chat:6, search:2, saved:3, hide:-8 };
 function decayed(e, t) { return e[0] * Math.pow(0.5, (t - e[1]) / HALF); }
@@ -208,7 +211,17 @@ function learnListing(u, l, kind) {
   if (kind === 'hide') { u.hidden = u.hidden || []; if (!u.hidden.includes(l.id)) u.hidden.push(l.id); if (u.hidden.length > 500) u.hidden.shift(); }
   return true;
 }
-const learnQuery = (u, s, kind) => { const ws = words(s.q); learn(u, [...ws.map(w => 'w:' + w), ...ws.map(subOf).filter(Boolean).map(g => 'g:' + g), ...(SUBS.includes(s.sub || s.cat) ? ['g:' + (s.sub || s.cat)] : []), ...(s.section ? ['d:' + s.section] : [])], kind); };
+const learnQuery = (u, s, kind) => {
+  if (!u) return;
+  if (kind === 'search') {
+    const key = JSON.stringify([TAGS.norm(s.q),s.sub||s.cat,s.section]), t = now();
+    u.querySignals = u.querySignals || {};
+    if (u.querySignals[key] && t-u.querySignals[key]<5*60e3) return;
+    u.querySignals[key]=t;
+    Object.keys(u.querySignals).sort((a,b)=>u.querySignals[b]-u.querySignals[a]).slice(60).forEach(k=>delete u.querySignals[k]);
+  }
+  const ws = words(s.q); learn(u, [...TAGS.queryTags(s.q), ...ws.map(w => 'w:' + w), ...ws.map(subOf).filter(Boolean).map(g => 'g:' + g), ...(SUBS.includes(s.sub || s.cat) ? ['g:' + (s.sub || s.cat)] : []), ...(s.section ? ['d:' + s.section] : [])], kind);
+};
 function hash(s) { let h = 2166136261; for (let i = 0; i < s.length; i++) h = Math.imul(h ^ s.charCodeAt(i), 16777619); return (h >>> 0) / 4294967296; }
 function recommend(arr, u) {
   const t = now(), I = (u && u.interests) || {}, day = Math.floor(t / 864e5);
@@ -216,8 +229,9 @@ function recommend(arr, u) {
   const cold = !Object.keys(I).length;
   const scored = arr.filter(l => !hidden.has(l.id)).map(l => {
     const tags = l.tags || (l.tags = makeTags(l));
-    let aff = 0; if (!cold) for (const g of tags) if (I[g]) aff += decayed(I[g], t);
-    const ageD = (t - l.createdAt) / 864e5;
+    // A long description must not win just by containing more words.
+    let aff = 0; if (!cold) { const hits = tags.filter(g => I[g]).map(g => decayed(I[g], t)).sort((a,b) => Math.abs(b)-Math.abs(a)).slice(0,12); aff = hits.reduce((sum,w) => sum+w,0) / Math.sqrt(Math.max(1,hits.length)); }
+    const ageD = Math.max(0,(t - l.createdAt) / 864e5);
     let sc = 6 * Math.tanh(aff / 8)                   // персональный интерес
       + 3 * Math.exp(-ageD / 5)                        // свежесть
       + (isTop(l) ? 2.5 : 0)                           // платный ТОП
@@ -334,6 +348,7 @@ function listingOut(l, full) {
   // Tagging is internal: never return training/debug fields, even to the owner.
   const o = Object.assign({}, l, { top: isTop(l), seller: pubUser(s), shareUrl: shareUrl(l.id) });
   for (const k of ['tags','atags','tt','tu','nu','mtags','hideTags','ai','ai2','aiAt','aiSub','aiGender','aiSeason','aiVersion','aiModel','unknownCounted','st']) delete o[k];
+  o.priceNum = Pricing.original(l); o.discountPrice = Pricing.sale(l); o.effectivePrice = effectivePrice(l); o.price = Pricing.text(l);
   o.favCount = l.favCount || 0; o.views = l.views || 0;
   if (!full) { o.photo = l.photos[0] || null; o.photoCount = l.photos.length; delete o.photos; delete o.desc; }
   o.ways = contactWays(l);
@@ -371,7 +386,7 @@ function matches(l, s) {
   if (s.gender && (l.a || {}).gender !== s.gender && (l.a || {}).gender !== 'Унисекс') return false;
   if (s.sizes && !Sizes.rank(l, s.sizes)) return false;
   if (s.q) { const qs = words(s.q), keys = TAGS.queryTags(s.q); if (qs.length && !relevance(l, qs, s.q)) return false; if (!qs.length && keys.length && !keys.some(k => (l.tags || makeTags(l)).includes(k))) return false; }
-  const p = priceNum(l.price), a = parseFloat(s.min), b = parseFloat(s.max);
+  const p = effectivePrice(l), a = parseFloat(s.min), b = parseFloat(s.max);
   if (!isNaN(a) || !isNaN(b)) { if (p == null) return false; if (!isNaN(a) && p < a) return false; if (!isNaN(b) && p > b) return false; }
   return true;
 }
@@ -382,7 +397,8 @@ function cleanListing(b, l) {
     const error = Validation.error(kind, value); if (error) need(400, error);
   }
   if (b.cat !== undefined) l.cat = CATS.includes(b.cat) ? b.cat : 'other';
-  ['name','price','shopName'].forEach(k => { if (b[k] !== undefined) l[k] = str(b[k], 80); });
+  try { Object.assign(l, Pricing.clean(b,l)); } catch(e) { need(400,e.message); }
+  ['name','shopName'].forEach(k => { if (b[k] !== undefined) l[k] = str(b[k], 80); });
   if (b.bazaar !== undefined) l.bazaar = bazOf(b.bazaar);
   if (b.sector !== undefined) { const v=Validation.clean(b.sector).toUpperCase(); if ((v || ['Саховат','Сомон'].includes(l.bazaar)) && Validation.sectorError(v)) need(400,Validation.sectorError(v)); l.sector=['Саховат','Сомон'].includes(l.bazaar)?v:''; }
   if (!['Саховат','Сомон'].includes(l.bazaar)) l.sector='';
@@ -421,7 +437,7 @@ function cleanListing(b, l) {
 function threadOut(t, uid) {
   const l = db.listings[t.listingId], last = t.messages[t.messages.length-1];
   const other = db.users[uid === t.buyerId ? t.sellerId : t.buyerId];
-  return { id:t.id, listingId:t.listingId, listing: l ? { id:l.id, name:l.name, price:l.price, photo:l.photos[0]||null, archived:!!l.archived } : null,
+  return { id:t.id, listingId:t.listingId, listing: l ? { id:l.id, name:l.name, price:Pricing.text(l), priceNum:Pricing.original(l), discountPrice:Pricing.sale(l), photo:l.photos[0]||null, archived:!!l.archived } : null,
     role: uid === t.buyerId ? 'buyer' : 'seller', other: pubUser(other), last: last ? Object.assign(shortMsg(last), { mine: last.from === uid }) : null, pin: t.pin || null,
     unread: uid === t.buyerId ? t.uB : t.uS, updatedAt: last ? last.t : t.createdAt };
 }
@@ -570,8 +586,8 @@ route('GET', '/listings', 0, (q, b, u) => {
       arr = rec.map(l => [l, relevance(l, qs, qquery) * 2 - pos.get(l.id) / Math.max(10, rec.length) * 3]).sort((a, b) => b[1] - a[1]).map(x => x[0]); var ranked = 1; } }
   const s = q.sort || 'rec';
   if (s === 'new') arr.sort((a,b) => b.createdAt - a.createdAt);
-  else if (s === 'cheap') arr.sort((a,b) => (priceNum(a.price) ?? 1e15) - (priceNum(b.price) ?? 1e15));
-  else if (s === 'exp') arr.sort((a,b) => (priceNum(b.price) ?? -1) - (priceNum(a.price) ?? -1));
+  else if (s === 'cheap') arr.sort((a,b) => (effectivePrice(a) ?? 1e15) - (effectivePrice(b) ?? 1e15));
+  else if (s === 'exp') arr.sort((a,b) => (effectivePrice(b) ?? -1) - (effectivePrice(a) ?? -1));
   else if (q.seller) arr.sort((a,b) => b.createdAt - a.createdAt);
   else if (!ranked) arr = recommend(arr, u);
   if (q.sizes) arr.sort((a,b) => Sizes.rank(b, q.sizes) - Sizes.rank(a, q.sizes));
@@ -619,7 +635,7 @@ route('GET', '/listings/:id/similar', 0, (q, b, u, r, p) => {
     const a = l.a || {}, b = x.a || {};
     if (a.gender && b.gender && a.gender !== b.gender && a.gender !== 'Унисекс' && b.gender !== 'Унисекс') return null;
     if (l.sizes && x.sizes && Sizes.rank(x,l.sizes) === 2) score += 1;
-    const priceA = parseFloat(l.price), priceB = parseFloat(x.price);
+    const priceA = effectivePrice(l), priceB = effectivePrice(x);
     if (priceA > 0 && priceB > 0) score += Math.max(0, 1 - Math.abs(Math.log(priceA / priceB))); 
     // Personalization breaks close matches; it must not displace genuinely similar items.
     score += 0.75 * (1 - recOrder.get(x.id) / Math.max(1, candidates.length));
@@ -657,7 +673,7 @@ route('POST', '/listings', 1, (q, b, u) => {
   saveAddr(u, l);
   touch();
   // уведомления по сохранённым поискам
-  for (const s of Object.values(db.searches)) if (s.userId !== u.id && matches(l, s)) notify(s.userId, `🔔 Новое по вашему поиску «${s.title}»:\n${l.name} — ${l.price || 'цена не указана'}\nРяд ${l.row}, магазин №${l.shopNum}`);
+  for (const s of Object.values(db.searches)) if (s.userId !== u.id && matches(l, s)) notify(s.userId, `Новое по вашему поиску «${s.title}»:\n${l.name} — ${Pricing.text(l)}\nРяд ${l.row}, магазин №${l.shopNum}`);
   return listingOut(l, true);
 });
 function own(p, u) { const l = db.listings[p.id] || need(404, 'Объявление не найдено'); if (l.sellerId !== u.id) need(403, 'Это не ваше объявление'); return l; }
@@ -673,7 +689,7 @@ route('GET', '/my/stats', 1, (q, b, u) => {
   const days = []; for (let i = 13; i >= 0; i--) days.push(new Date(Date.now() - i*864e5).toISOString().slice(0,10));
   const items = Object.values(db.listings).filter(l => l.sellerId === u.id).map(l => {
     const st = l.st || {}, chats = Object.values(db.threads).filter(t => t.listingId === l.id).length;
-    return { id:l.id, name:l.name, price:l.price, photo:l.photos[0]||null, archived:!!l.archived, createdAt:l.createdAt,
+    return { id:l.id, name:l.name, price:Pricing.text(l), priceNum:Pricing.original(l), discountPrice:Pricing.sale(l), photo:l.photos[0]||null, archived:!!l.archived, createdAt:l.createdAt,
       views:l.views||0, favCount:l.favCount||0, chats, daily: days.map(d => ({ d, v:(st[d]||{}).v||0, f:(st[d]||{}).f||0, c:(st[d]||{}).c||0 })) };
   }).sort((a,b) => b.views - a.views);
   const sum = k => items.reduce((s,x) => s + x[k], 0);
@@ -733,11 +749,11 @@ route('POST', '/threads/:id/messages', 1, (q, b, u, r, p) => {
   }
   const m = { id: rid(4), clientId:clientId || undefined, from: u.id, text, t: now() }; if (b.listingId && db.listings[b.listingId]) m.lid = String(b.listingId);
   if (img) m.img = img; if (voice) { m.voice = voice; m.dur = Math.min(600, Math.max(0, +b.dur || 0)); }
-  if (b.re) { const o = t.messages.find(x => x.id === b.re); if (o) m.re = { id:o.id, text: o.del ? 'Сообщение удалено' : str(o.text || (o.img ? '📷 Фото' : o.voice ? '🎤 Голосовое' : ''), 120), mine: o.from }; }
+  if (b.re) { const o = t.messages.find(x => x.id === b.re); if (o) m.re = { id:o.id, text: o.del ? 'Сообщение удалено' : str(o.text || (o.img ? 'Фото' : o.voice ? 'Голосовое сообщение' : ''), 120), mine: o.from }; }
   t.messages.push(m); if (t.messages.length > 3000) t.messages.splice(0, t.messages.length - 3000);
   const toBuyer = u.id === t.sellerId; if (toBuyer) t.uB++; else t.uS++; touch();
   const l = db.listings[t.listingId] || {};
-  notify(toBuyer ? t.buyerId : t.sellerId, `💬 ${u.name || 'Пользователь'}${l.name ? ' · «' + l.name + '»' : ''}\n${text || (img ? '📷 Фото' : '🎤 Голосовое сообщение')}`);
+  notify(toBuyer ? t.buyerId : t.sellerId, `${u.name || 'Пользователь'}${l.name ? ' · «' + l.name + '»' : ''}\n${text || (img ? 'Фото' : '🎤 Голосовое сообщение')}`);
   return msgOut(m, u.id);
 });
 function myMsg(t, id, u, own) { const m = t.messages.find(x => x.id === id) || need(404, 'Сообщение не найдено'); if (own && m.from !== u.id) need(403, 'Можно менять только свои сообщения'); return m; }
@@ -750,7 +766,7 @@ route('DELETE', '/threads/:id/messages/:mid', 1, (q, b, u, r, p) => {  // уда
   if (t.pin && t.pin.id === m.id) t.pin = null; touch(); return msgOut(m, u.id);
 });
 route('POST', '/threads/:id/pin', 1, (q, b, u, r, p) => {            // закрепить / открепить (b.id = null)
-  const t = myThread(p, u); if (!b.id) t.pin = null; else { const m = myMsg(t, b.id, u); t.pin = { id:m.id, text: m.text || (m.img ? '📷 Фото' : m.voice ? '🎤 Голосовое' : ''), t: now() }; }
+  const t = myThread(p, u); if (!b.id) t.pin = null; else { const m = myMsg(t, b.id, u); t.pin = { id:m.id, text: m.text || (m.img ? 'Фото' : m.voice ? 'Голосовое сообщение' : ''), t: now() }; }
   const last = t.messages[t.messages.length - 1]; if (last) last.u = now(); touch(); return { pin: t.pin };
 });
 
@@ -759,10 +775,11 @@ route('GET', '/updates', 1, (q, b, u) => {
   const since = +q.since || 0, items = [];
   for (const t of Object.values(db.threads)) {
     if (t.buyerId !== u.id && t.sellerId !== u.id) continue;
-    const ms = t.messages.filter(m => m.t > since && m.from !== u.id);
+    const read = (u.id === t.buyerId ? t.rB : t.rS) || 0;
+    const ms = t.messages.filter(m => m.t > Math.max(since,read) && m.from !== u.id && !m.del);
     if (!ms.length) continue;
     const o = db.users[ms[ms.length-1].from] || {}, l = db.listings[t.listingId] || {};
-    items.push({ tid: t.id, name: o.shopName || o.name || 'Пользователь', item: l.name || '', messages: ms.slice(-5).map(m => m.del ? 'Сообщение удалено' : m.text || (m.img ? '📷 Фото' : m.voice ? '🎤 Голосовое' : m.lid ? 'Объявление' : 'Сообщение')) });
+    items.push({ tid: t.id, name: o.shopName || o.name || 'Пользователь', item: l.name || '', messages: ms.slice(-5).map(m => m.del ? 'Сообщение удалено' : m.text || (m.img ? 'Фото' : m.voice ? 'Голосовое сообщение' : m.lid ? 'Объявление' : 'Сообщение')) });
   }
   return { now: now(), items };
 });
@@ -805,7 +822,7 @@ route('POST', '/users/:id/reviews', 1, (q, b, u, r, p) => {
   if (!stars) need(400, 'Поставьте оценку 1–5');
   db.reviews = db.reviews.filter(x => !(x.sellerId === p.id && x.authorId === u.id));
   db.reviews.push({ id: rid(4), sellerId: p.id, authorId: u.id, stars, text, t: now(), listingName: (db.listings[t.listingId]||{}).name || '' }); touch();
-  notify(p.id, `⭐ Новый отзыв (${stars}/5): ${text}`);
+  notify(p.id, `Новый отзыв (${stars}/5): ${text}`);
   return rating(p.id);
 });
 
@@ -825,7 +842,7 @@ route('DELETE', '/searches/:id', 1, (q, b, u, r, p) => { const s = db.searches[p
 route('GET', '/listings/:id/share', 0, (q, b, u, r, p) => {
   const l = db.listings[p.id] || need(404, 'Объявление не найдено');
   const url = shareUrl(l.id);
-  return { url, text: `${l.name} — ${l.price || 'цена не указана'}\n${l.bazaar ? 'Базар ' + l.bazaar + ', ' : ''}${l.sector ? 'сектор ' + l.sector + ', ' : ''}Ряд ${l.row}, магазин №${l.shopNum} (${l.shopName})` + (url ? `\n${url}` : '') };
+  return { url, text: `${l.name} — ${Pricing.text(l)}\n${l.bazaar ? 'Базар ' + l.bazaar + ', ' : ''}${l.sector ? 'сектор ' + l.sector + ', ' : ''}Ряд ${l.row}, магазин №${l.shopNum} (${l.shopName})` + (url ? `\n${url}` : '') };
 });
 
 // --- Рекомендации ---
@@ -865,10 +882,10 @@ http.createServer((req, res) => {
   if (lm) {
     const l = db.listings[lm[1]], esc = v => String(v || '').replace(/[&<>"]/g, c => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;' })[c]);
     const appLink = 'glassmarket://listing/' + encodeURIComponent(lm[1]);
-    const download = 'https://github.com/somontj5/server.js/raw/main/apk/SUGD.TJ-9.20.apk';
+    const download = 'https://github.com/somontj5/server.js/raw/main/apk/SUGD.TJ-9.21.apk';
     const intent = 'intent://listing/' + encodeURIComponent(lm[1]) + '#Intent;scheme=glassmarket;package=ru.glassmarket.app;S.browser_fallback_url=' + encodeURIComponent(download) + ';end';
-    const html = l && !l.archived ? `<!doctype html><meta charset=utf-8><meta name=viewport content="width=device-width,initial-scale=1"><title>${esc(l.name)}</title><meta property="og:title" content="${esc(l.name + ' — ' + (l.price||''))}"><meta property="og:description" content="${esc('Ряд ' + l.row + ', магазин №' + l.shopNum)}">
-<body style="font-family:sans-serif;max-width:520px;margin:auto;padding:12px">${l.photos[0] ? `<img src="/l/${esc(l.id)}/photo" style="width:100%;border-radius:12px">` : ''}<h2>${esc(l.name)}</h2><h3>${esc(l.price || 'цена не указана')}</h3><p>📍 ${l.bazaar ? 'Базар ' + esc(l.bazaar) + ', ' : ''}${l.sector ? 'сектор ' + esc(l.sector) + ', ' : ''}Ряд ${esc(l.row)}, магазин №${esc(l.shopNum)} (${esc(l.shopName)})</p>${l.material ? `<p>🧵 Материал: ${esc(l.material)}</p>` : ''}<p style="white-space:pre-wrap">${esc(l.desc)}</p><a id="openApp" href="${esc(intent)}" style="display:block;text-align:center;background:#075b46;color:#fff;padding:14px;border-radius:12px;text-decoration:none">Открыть в SUGD.TJ</a><p style="text-align:center"><a href="${download}">Скачать SUGD.TJ 9.20</a></p><p style="color:#777;font-size:13px">Если приложение не открылось автоматически, нажмите кнопку выше.</p><script>if(/Android/i.test(navigator.userAgent))location.href=${JSON.stringify(appLink)};</script></body>`
+    const html = l && !l.archived ? `<!doctype html><meta charset=utf-8><meta name=viewport content="width=device-width,initial-scale=1"><title>${esc(l.name)}</title><meta property="og:title" content="${esc(l.name + ' — ' + Pricing.text(l))}"><meta property="og:description" content="${esc('Ряд ' + l.row + ', магазин №' + l.shopNum)}">
+<body style="font-family:sans-serif;max-width:520px;margin:auto;padding:12px">${l.photos[0] ? `<img src="/l/${esc(l.id)}/photo" style="width:100%;border-radius:12px">` : ''}<h2>${esc(l.name)}</h2><h3>${esc(Pricing.text(l))}</h3><p>${l.bazaar ? 'Базар ' + esc(l.bazaar) + ', ' : ''}${l.sector ? 'сектор ' + esc(l.sector) + ', ' : ''}Ряд ${esc(l.row)}, магазин №${esc(l.shopNum)} (${esc(l.shopName)})</p>${l.material ? `<p>Материал: ${esc(l.material)}</p>` : ''}<p style="white-space:pre-wrap">${esc(l.desc)}</p><a id="openApp" href="${esc(intent)}" style="display:block;text-align:center;background:#075b46;color:#fff;padding:14px;border-radius:12px;text-decoration:none">Открыть в SUGD.TJ</a><p style="text-align:center"><a href="${download}">Скачать SUGD.TJ 9.21</a></p><p style="color:#777;font-size:13px">Если приложение не открылось автоматически, нажмите кнопку выше.</p><script>if(/Android/i.test(navigator.userAgent))location.href=${JSON.stringify(appLink)};</script></body>`
       : '<!doctype html><meta charset=utf-8><h3 style="font-family:sans-serif">Объявление снято с публикации</h3>';
     res.writeHead(l && !l.archived ? 200 : 404, { 'content-type': 'text/html; charset=utf-8', 'cache-control':'no-store', 'x-content-type-options':'nosniff' }); return res.end(html);
   }

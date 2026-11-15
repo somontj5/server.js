@@ -69,6 +69,9 @@ function layer1(l) {
   else if (g.includes('унисекс')) add('унисекс');
   for (const value of Catalog.materialList([].concat(Catalog.materialList(l.material),Catalog.materialList(a.mat)))) add(canonical(value));
   if (a.size) add('размер ' + String(a.size).toLowerCase());
+  if (a.color) add(canonical(a.color));
+  if (a.cond) add(canonical(a.cond));
+  if (a.style) add(canonical(a.style));
   if (a.season) add(canonical(a.season));
   if (a.made) add(canonical(a.made));
   return out;
@@ -113,20 +116,22 @@ function layer2(text) {
 }
 
 /* видимые теги объявления: слой1 + слой2 + ИИ, минус скрытые продавцом, max 8 */
-function visible(l) {
+function semantic(l) {
   const t1 = layer1(l);
   const t2 = layer2((l.name || '') + ' ' + (l.desc || '') + ' ' + (l.material || '') + ' ' + (l.mtags || '')).tags;
   const hide = new Set(l.hideTags || []), out = [];
   for (const t of t1.concat(t2)) if (!hide.has(t) && out.indexOf(t) < 0) out.push(t);
   const permitted = new Set(allowed().concat(t1));
   (Array.isArray(l.ai2) ? l.ai2 : []).forEach(t => { if (permitted.has(t) && !hide.has(t) && !out.includes(t)) out.push(t); });
-  return out.slice(0, MAX);
+  return out;
 }
+
+function visible(l) { return semantic(l).slice(0, MAX); }
 
 /* индекс объявления для поиска и «похожих»: синонимы находят друг друга */
 function indexTags(l) {
   const t = new Set();
-  visible(l).forEach(x => {
+  semantic(l).forEach(x => {
     t.add('k:' + x);
     tokens(x).forEach(w => { if (w.length > 2 && !NOISE.has(w)) t.add('w:' + w); });
   });
@@ -136,4 +141,4 @@ function indexTags(l) {
 /* текст запроса → ключи тегов словаря (чтобы «2 омад» находило «двойка») */
 function queryTags(q) { return layer2(q).tags.map(t => 'k:' + t); }
 
-module.exports = { norm, tokens, loadDict, allowed, canonical, layer1, layer2, visible, indexTags, queryTags, DICT: () => DICT, NOISE };
+module.exports = { norm, tokens, loadDict, allowed, canonical, layer1, layer2, semantic, visible, indexTags, queryTags, DICT: () => DICT, NOISE };

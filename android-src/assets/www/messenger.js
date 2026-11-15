@@ -13,7 +13,7 @@ function cachedMedia(c,m,type){var k=mkey(m),value=(MED[k]||{})[type];if(value){
 function loadVoice(c,m){var src=cachedMedia(c,m,'voice');if(src)return Promise.resolve(src);if(!m.sid||!c.tid)return Promise.reject(Error('Запись недоступна'));
  return GM.api('GET','/threads/'+encodeURIComponent(c.tid)+'/messages/'+encodeURIComponent(m.sid)+'/voice').then(function(r){if(m.del||!r||!GMChatMedia.validAudio(r.voice))throw Error('Запись недоступна');(MED[mkey(m)]=MED[mkey(m)]||{}).voice=r.voice;cacheMedia(c,m,'voice',r.voice);return r.voice})}
 window.mprev=function(m){return m.del?'Сообщение удалено':m.text||(m.img?'Фото':m.voice?'Голосовое сообщение':m.lid?'Объявление':'')};
-function status(m,c){if(!m.me||m.del)return '';if(m.failed)return '<span class="msg-failed">Не отправлено</span>';if(m.pending)return '<span class="tk" aria-label="Отправляется">'+ic('clock')+'</span>';return '<span class="'+((c.oread||0)>=m.t?'rd':'tk')+'" aria-label="'+((c.oread||0)>=m.t?'Прочитано':'Отправлено')+'">'+((c.oread||0)>=m.t?'✓✓':'✓')+'</span>'}
+function status(m,c){if(!m.me||m.del)return '';if(m.failed)return '<span class="msg-failed">Не отправлено</span>';if(m.pending)return '<span class="tk" aria-label="Отправляется">'+ic('clock')+'</span>';return '<span class="'+((c.oread||0)>=m.t?'rd':'tk')+'" aria-label="'+((c.oread||0)>=m.t?'Прочитано':'Отправлено')+'">'+ic((c.oread||0)>=m.t?'checks':'check')+'</span>'}
 function messageBody(c,m,i){var k=mkey(m),md=MED[k]||{};
  if(m.del)return '<div class="mdel">Сообщение удалено</div>';
  var h=m.re?'<button class="mre" data-jump="'+esc(m.re.id)+'"><b>'+esc(m.re.mine?'Вы':c.name||'Собеседник')+'</b><span>'+esc(m.re.text||'Сообщение')+'</span></button>':'';

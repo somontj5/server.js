@@ -21,12 +21,9 @@ public class MsgService {
     try{((JobScheduler)c.getSystemService(Context.JOB_SCHEDULER_SERVICE)).cancel(JOB);}catch(Exception e){}}
   static void pollNow(Context c){if(!logged(c)||MainActivity.visible||!POLLING.compareAndSet(false,true))return;
     NotificationManager nm=(NotificationManager)c.getSystemService(Context.NOTIFICATION_SERVICE);
-    try{ConnectivityManager cm=(ConnectivityManager)c.getSystemService(Context.CONNECTIVITY_SERVICE);NetworkCapabilities net=cm.getNetworkCapabilities(cm.getActiveNetwork());
+    try{if(!nm.areNotificationsEnabled())return;ConnectivityManager cm=(ConnectivityManager)c.getSystemService(Context.CONNECTIVITY_SERVICE);NetworkCapabilities net=cm.getNetworkCapabilities(cm.getActiveNetwork());
       if(net==null||!net.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET))return;
-      if(Build.VERSION.SDK_INT>=26){NotificationChannel ch=new NotificationChannel(CHECK_CH,"Проверка сообщений",NotificationManager.IMPORTANCE_LOW);ch.setSound(null,null);ch.enableVibration(false);ch.setShowBadge(false);nm.createNotificationChannel(ch);}
-      Notification.Builder b=nb(c,CHECK_CH).setSmallIcon(c.getResources().getIdentifier("ic_notification","drawable",c.getPackageName())).setContentTitle("Поиск новых сообщений").setContentText("SUGD.TJ").setOngoing(true).setOnlyAlertOnce(true).setShowWhen(false).setContentIntent(open(c,null,CHECK_ID)).setPriority(Notification.PRIORITY_MIN);
-      if(Build.VERSION.SDK_INT>=26)b.setTimeoutAfter(20000);
-      try{nm.notify(CHECK_ID,b.build());}catch(SecurityException ignored){}
+      // Alarm/Job execution does not need a transient "checking" notification.
       new MsgService(c).poll();
     }catch(Exception ignored){}finally{nm.cancel(CHECK_ID);POLLING.set(false);}}
   static void cancelAll(Context c){NotificationManager nm=(NotificationManager)c.getSystemService(Context.NOTIFICATION_SERVICE);try{nm.cancelAll();}catch(Exception e){}}
@@ -51,13 +48,13 @@ public class MsgService {
     JSONArray a=o.optJSONArray("items");if(a==null)return;NotificationManager nm=(NotificationManager)c.getSystemService(Context.NOTIFICATION_SERVICE);
     for(int i=0;i<a.length();i++){JSONObject t=a.getJSONObject(i);String tid=t.optString("tid"),name=t.optString("name","Новое сообщение"),item=t.optString("item","");
       JSONArray ms=t.optJSONArray("messages");if(ms==null||ms.length()==0)continue;
-      Notification.InboxStyle st=new Notification.InboxStyle();String lastTxt="";for(int k=Math.max(0,ms.length()-5);k<ms.length();k++){lastTxt=ms.getString(k);st.addLine(lastTxt);}
-      if(!item.isEmpty())st.setSummaryText(item);
+      Notification.MessagingStyle st=new Notification.MessagingStyle("Вы");String lastTxt="";
+      for(int k=Math.max(0,ms.length()-5);k<ms.length();k++){lastTxt=ms.getString(k);st.addMessage(lastTxt,now-(ms.length()-1-k),name);}
       int nid=Math.abs(tid.hashCode())%100000+10;
       Notification.Builder b=nb(c,CH).setSmallIcon(c.getResources().getIdentifier("ic_notification","drawable",c.getPackageName())).setLargeIcon(avatar(name)).setContentTitle(name).setContentText(lastTxt)
-        .setSubText(item.isEmpty()?null:item).setStyle(ms.length()>1?st:new Notification.BigTextStyle().bigText(lastTxt)).setAutoCancel(true).setColor(0xff075b46)
+        .setSubText(item.isEmpty()?null:item).setStyle(st).setAutoCancel(true).setColor(0xff075b46)
         .setContentIntent(open(c,tid,nid)).setCategory(Notification.CATEGORY_MESSAGE).setNumber(ms.length()).setWhen(System.currentTimeMillis()).setShowWhen(true)
-        .setGroup("gm_msgs");
+        .setVisibility(Notification.VISIBILITY_PRIVATE).setOnlyAlertOnce(false);
       if(Build.VERSION.SDK_INT<26)b.setPriority(Notification.PRIORITY_HIGH).setDefaults(Notification.DEFAULT_ALL);
       nm.notify(nid,b.build());}}
   Bitmap avatar(String name){int s=128;Bitmap bm=Bitmap.createBitmap(s,s,Bitmap.Config.ARGB_8888);Canvas c=new Canvas(bm);Paint p=new Paint(Paint.ANTI_ALIAS_FLAG);
