@@ -6,6 +6,7 @@ public class Bridge {
     Intent ch=Intent.createChooser(i,"Поделиться");ch.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);c.startActivity(ch);}
   @JavascriptInterface public void setAuth(String srv,String token,String uid){
     SharedPreferences p=c.getSharedPreferences("gm",0);boolean ch=!token.equals(p.getString("token",""))||!srv.equals(p.getString("srv",""));
+    if(!uid.equals(p.getString("uid","")))p.edit().remove("since").apply();
     p.edit().putString("srv",srv).putString("token",token).putString("uid",uid).apply();if(ch)MsgService.start(c);}
   @JavascriptInterface public void saveImage(String src){
     if(src==null||src.length()>900000||!src.matches("^data:image/(jpeg|png|webp);base64,[A-Za-z0-9+/]+={0,2}$"))return;

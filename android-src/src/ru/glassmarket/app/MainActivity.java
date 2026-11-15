@@ -1,7 +1,7 @@
 package ru.glassmarket.app;
 import android.app.Activity;import android.content.*;import android.net.Uri;import android.os.*;import android.webkit.*;import android.view.View;
 public class MainActivity extends Activity {
-  static final int FC=1,SAVE_IMAGE=2;byte[] imageToSave;static boolean visible=false;boolean ready=false;String pendingListing,pendingTid;WebView w;ValueCallback<Uri[]> cb;PermissionRequest pr;
+  static final int FC=1,SAVE_IMAGE=2;byte[] imageToSave;static volatile boolean visible=false;boolean ready=false;String pendingListing,pendingTid;WebView w;ValueCallback<Uri[]> cb;PermissionRequest pr;
   @Override protected void onCreate(Bundle b){super.onCreate(b);
     w=new WebView(this);WebSettings s=w.getSettings();s.setJavaScriptEnabled(true);s.setDomStorageEnabled(true);s.setAllowFileAccess(true);s.setTextZoom(100);s.setMediaPlaybackRequiresUserGesture(false);
     w.setBackgroundColor(0xffffffff);w.addJavascriptInterface(new Bridge(this),"Android");
@@ -31,8 +31,8 @@ public class MainActivity extends Activity {
     if(pendingListing!=null){String id=pendingListing;pendingListing=null;w.evaluateJavascript("window.gmOpenListing&&gmOpenListing('"+id+"')",null);}
     if(pendingTid!=null){String id=pendingTid;pendingTid=null;w.evaluateJavascript("window.gmOpenTid&&gmOpenTid('"+id+"')",null);}
   }
-  @Override protected void onResume(){super.onResume();visible=true;MsgService.cancelAll(this);}
-  @Override protected void onPause(){super.onPause();visible=false;MsgService.start(this);}
+  @Override protected void onResume(){super.onResume();w.onResume();visible=true;MsgService.cancelAll(this);}
+  @Override protected void onPause(){w.evaluateJavascript("window.gmPauseMedia&&gmPauseMedia()",null);w.onPause();super.onPause();visible=false;MsgService.start(this);}
   void imageToast(final String text){runOnUiThread(new Runnable(){public void run(){android.widget.Toast.makeText(MainActivity.this,text,android.widget.Toast.LENGTH_SHORT).show();}});}
   void saveImage(final byte[] bytes,final String mime){runOnUiThread(new Runnable(){public void run(){
     if(imageToSave!=null){imageToast("Сначала завершите сохранение фото");return;}
@@ -51,5 +51,5 @@ public class MainActivity extends Activity {
       cb.onReceiveValue(r);cb=null;return;}super.onActivityResult(rq,rs,d);}
   @Override public void onRequestPermissionsResult(int rq,String[] p,int[] g){super.onRequestPermissionsResult(rq,p,g);
     if(rq==8&&pr!=null){if(g.length>0&&g[0]==0)pr.grant(pr.getResources());else pr.deny();pr=null;}}
-  @Override public void onBackPressed(){w.evaluateJavascript("(function(){if(location.hash&&location.hash!=='#home'){history.back();return true}return false})()",new ValueCallback<String>(){public void onReceiveValue(String value){if(!"true".equals(value))moveTaskToBack(true);}});}
+  @Override public void onBackPressed(){w.evaluateJavascript("(function(){if(window.gmHandleBack&&gmHandleBack())return true;if(location.hash&&location.hash!=='#home'){history.back();return true}return false})()",new ValueCallback<String>(){public void onReceiveValue(String value){if(!"true".equals(value))moveTaskToBack(true);}});}
 }
