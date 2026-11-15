@@ -60,19 +60,22 @@ function layer1(l) {
   const out = [], a = l.a || {}, add = t => { if (t && !out.includes(t)) out.push(t); };
   const group = Catalog.group(l.sub || l.cat), section = Catalog.leaf(l.section);
   add(section ? section.n : group ? group.n : CAT_RU[l.sub] || CAT_RU[l.cat]);
-  const g = norm(a.gender || '').trim(), age = norm(a.age || l.ageGroup || '').trim();
-  if (/дет|кудак/.test(g + ' ' + age) || l.sub === 'kids') add('детское');
+  const g = norm(a.gender || '').trim(), age = norm(a.ageGroup || a.age || l.ageGroup || '').trim();
+  const kids = /дет|кудак/.test(g + ' ' + age) || l.sub === 'kids';
+  if (kids) add('детское');
   else if (/взрос/.test(age) || /муж|жен|унисекс/.test(g)) add('взрослое');
   if (g.includes('муж')) add('мужское');
   else if (g.includes('жен')) add('женское');
   else if (g.includes('унисекс')) add('унисекс');
-  for (const value of [l.material, a.mat]) if (value) add(canonical(value));
+  for (const value of Catalog.materialList([].concat(Catalog.materialList(l.material),Catalog.materialList(a.mat)))) add(canonical(value));
   if (a.size) add('размер ' + String(a.size).toLowerCase());
   if (a.season) add(canonical(a.season));
   if (a.made) add(canonical(a.made));
   return out;
 }
 
+// Conservative word-boundary inflections: never unrestricted substring matching.
+function wordStem(w){return w.replace(/(иями|ями|ами|ого|его|ому|ему|ыми|ими|ая|яя|ое|ее|ые|ие|ый|ий|ой|ом|ем|ах|ях|ов|ев|ам|ям|ую|юю|а|я|ы|и|у|ю|е|о)$/,'')}
 /* слой 2: поиск по словарю. Возвращает {tags, unknown} */
 function layer2(text) {
   const toks = tokens(text), hay = toks, tags = [], unknown = [];
@@ -84,7 +87,8 @@ function layer2(text) {
       for (let i = 0; i < hay.length; i++) {
         if (used[i]) continue;
         const t = hay[i];
-        if (t === v || (v.length >= 4 && t.startsWith(v) && /^(а|и|ы|у|е|ой|ая|ый|ые|ое|ом|ов|ам|ах|ами|ча|чаи)$/.test(t.slice(v.length)))) { used[i] = true; hit = true; }
+        const stem=wordStem(v);
+        if (t === v || (stem.length>=4&&wordStem(t)===stem) || (v.length >= 4 && t.startsWith(v) && /^(а|и|ы|у|е|ой|ая|ый|ые|ое|ом|ов|ам|ах|ами|ча|чаи)$/.test(t.slice(v.length)))) { used[i] = true; if(i>0&&/^(без|не)$/.test(hay[i-1])){used[i-1]=true;continue} hit = true; }
       }
     } else {
       for (let i = 0; i + vw.length <= hay.length; i++) {
@@ -92,6 +96,7 @@ function layer2(text) {
         for (let k = 0; k < vw.length; k++) if (used[i + k] || hay[i + k] !== vw[k]) { ok = false; break; }
         if (!ok) continue;
         for (let k = 0; k < vw.length; k++) used[i + k] = true;
+        if(i>0&&/^(без|не)$/.test(hay[i-1])){used[i-1]=true;continue}
         hit = true;
       }
     }

@@ -47,6 +47,33 @@ const {start}=require('./test-fixture');
   offline=true;await context.setOffline(true);await page.evaluate(()=>toggleFav('match'));await page.reload();assert.equal(await page.evaluate(()=>favs.includes('match')),false);
   offline=false;await context.setOffline(false);await page.evaluate(()=>syncFavorites());await page.waitForFunction(()=>!favoritePending.match);fav=await (await fetch(service.base+'/favorites',{headers:{authorization:'Bearer test-buyer'}})).json();assert.ok(!fav.items.some(x=>x.id==='match'));
   await page.evaluate(()=>{F=blankForm();drawSell();$('sellPg').hidden=false;$('sellPg').scrollTop=$('f-a_color').offsetTop-70});await page.waitForTimeout(350);await page.screenshot({path:'.local-build/919-sell-dark.png'});await overflow();
+  // 9.20: real custom choices, not a recolored Android system popup.
+  await page.evaluate(()=>{F=blankForm();drawSell();$('sellPg').hidden=false});
+  for(const theme of ['light','dark']){
+   await page.evaluate(t=>{F=blankForm();drawSell();$('sellPg').hidden=false;SugdTheme.set(t)},theme);
+   await page.click('[data-cat="suits"]');
+   const bg=await page.locator('.ccells').evaluate(e=>getComputedStyle(e).backgroundColor);assert.equal(bg,'rgba(0, 0, 0, 0)');
+   await page.click('[data-material-choice="sell"] summary');await page.click('[data-material-choice="sell"] [data-choice="Бамбук"]');await page.click('[data-material-choice="sell"] [data-choice="Флис"]');
+   assert.equal(await page.evaluate(()=>F.a.mat),'Бамбук, Флис');
+   await page.locator('[data-material-choice="sell"]').screenshot({path:'.local-build/920-materials-'+theme+'.png'});
+   await page.click('[data-material-choice="sell"] .choice-done');
+   await page.locator('#f-a_color summary').click();await page.locator('#f-a_color [data-choice="Розовый"]').click();assert.equal(await page.evaluate(()=>F.a.color),'Розовый');
+   assert.equal(await page.locator('#f-a_color summary svg').count(),1);
+   await page.locator('#f-cat').screenshot({path:'.local-build/920-categories-'+theme+'.png'});await overflow();
+  }
+  await page.evaluate(()=>{$('sellPg').hidden=true;location.hash='filter'});await page.waitForSelector('[data-material-choice="filter"]');
+  await page.click('[data-material-choice="filter"] summary');await page.click('[data-material-choice="filter"] [data-choice="Хлопок"]');await page.click('[data-material-choice="filter"] .choice-done');
+  await page.click('#fok');assert.equal(await page.evaluate(()=>S.f.mat),'Хлопок');
+  await page.evaluate(()=>{S.f={};S.cat='all';location.hash='profile';renderProfile()});await page.waitForSelector('#pEdit');
+  await page.click('#pEdit');await page.waitForSelector('#sheet.st>.shd');
+  assert.equal(await page.locator('#sheet').evaluate(e=>getComputedStyle(e).overflowX),'hidden');
+  const surfaces=await page.evaluate(()=>['#sheet','#sheet>.shd','#sheet .shead','#sheet .sbody'].map(s=>getComputedStyle(document.querySelector(s)).backgroundColor));assert.equal(new Set(surfaces).size,1);
+  await page.locator('#sheet').screenshot({path:'.local-build/920-profile-sheet-dark.png'});await page.click('#sheet [data-x]');
+  await page.locator('.theme-setting summary').click();assert.equal(await page.locator('.theme-setting summary svg').count(),1);await page.locator('.theme-setting [data-choice="dark"]').click();
+  await page.evaluate(()=>{location.hash='home';resetFilters()});await page.waitForTimeout(150);assert.equal(await page.locator('.sugd-hero').count(),0);
+  await page.evaluate(()=>{location.hash='item/base'});await page.waitForSelector('.gallery-actions');
+  const buttons=await page.locator('.gallery-actions button').evaluateAll(es=>es.map(e=>{var r=e.getBoundingClientRect();return {left:r.left,right:r.right}}));assert.ok(buttons[1].left-buttons[0].right>=9);
+  await page.click('[data-a="rev"]');await page.waitForSelector('#sheet .rvs');await page.locator('#sheet').screenshot({path:'.local-build/920-review-sheet-dark.png'});await page.click('#sheet [data-x]');
   // Render original vector artwork for matching Android launcher densities.
   const logo=await context.newPage();await logo.setViewportSize({width:512,height:512});await logo.setContent('<style>body{margin:0}svg{width:512px;height:512px}</style>'+fs.readFileSync('android-src/assets/www/sugd-logo.svg','utf8'));await logo.screenshot({path:'.local-build/919-launcher.png',omitBackground:true});await logo.close();
   assert.deepEqual(errors,[]);console.log('9.19 UI PASS: unchanged form nodes/scroll, filter colors, sectors, profile layout, theme persistence/system changes, photo control, offline favorite add/remove/reload/sync.');

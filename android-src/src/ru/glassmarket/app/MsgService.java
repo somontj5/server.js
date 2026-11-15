@@ -24,14 +24,14 @@ public class MsgService {
     try{ConnectivityManager cm=(ConnectivityManager)c.getSystemService(Context.CONNECTIVITY_SERVICE);NetworkCapabilities net=cm.getNetworkCapabilities(cm.getActiveNetwork());
       if(net==null||!net.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET))return;
       if(Build.VERSION.SDK_INT>=26){NotificationChannel ch=new NotificationChannel(CHECK_CH,"Проверка сообщений",NotificationManager.IMPORTANCE_LOW);ch.setSound(null,null);ch.enableVibration(false);ch.setShowBadge(false);nm.createNotificationChannel(ch);}
-      Notification.Builder b=nb(c,CHECK_CH).setSmallIcon(android.R.drawable.stat_notify_sync).setContentTitle("Поиск новых сообщений").setContentText("SUGD.TJ").setOngoing(true).setOnlyAlertOnce(true).setShowWhen(false).setContentIntent(open(c,null,CHECK_ID)).setPriority(Notification.PRIORITY_MIN);
+      Notification.Builder b=nb(c,CHECK_CH).setSmallIcon(c.getResources().getIdentifier("ic_notification","drawable",c.getPackageName())).setContentTitle("Поиск новых сообщений").setContentText("SUGD.TJ").setOngoing(true).setOnlyAlertOnce(true).setShowWhen(false).setContentIntent(open(c,null,CHECK_ID)).setPriority(Notification.PRIORITY_MIN);
       if(Build.VERSION.SDK_INT>=26)b.setTimeoutAfter(20000);
       try{nm.notify(CHECK_ID,b.build());}catch(SecurityException ignored){}
       new MsgService(c).poll();
     }catch(Exception ignored){}finally{nm.cancel(CHECK_ID);POLLING.set(false);}}
   static void cancelAll(Context c){NotificationManager nm=(NotificationManager)c.getSystemService(Context.NOTIFICATION_SERVICE);try{nm.cancelAll();}catch(Exception e){}}
   void channels(){if(Build.VERSION.SDK_INT<26)return;NotificationManager nm=c.getSystemService(NotificationManager.class);
-    NotificationChannel a=new NotificationChannel(CH,"Сообщения",NotificationManager.IMPORTANCE_HIGH);a.setDescription("Новые сообщения от покупателей и продавцов");a.enableVibration(true);a.setVibrationPattern(new long[]{0,60,40,60});a.setLightColor(0xff00aaff);a.enableLights(true);nm.createNotificationChannel(a);}
+    NotificationChannel a=new NotificationChannel(CH,"Сообщения",NotificationManager.IMPORTANCE_HIGH);a.setDescription("Новые сообщения от покупателей и продавцов");a.enableVibration(true);a.setVibrationPattern(new long[]{0,60,40,60});a.setLightColor(0xff075b46);a.enableLights(true);nm.createNotificationChannel(a);}
   static Notification.Builder nb(Context c,String ch){return Build.VERSION.SDK_INT>=26?new Notification.Builder(c,ch):new Notification.Builder(c);}
   static PendingIntent open(Context c,String tid,int rc){Intent i=new Intent(c,MainActivity.class);i.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK|Intent.FLAG_ACTIVITY_SINGLE_TOP);if(tid!=null)i.putExtra("tid",tid);
     return PendingIntent.getActivity(c,rc,i,PendingIntent.FLAG_UPDATE_CURRENT|PendingIntent.FLAG_IMMUTABLE);}
@@ -54,14 +54,14 @@ public class MsgService {
       Notification.InboxStyle st=new Notification.InboxStyle();String lastTxt="";for(int k=Math.max(0,ms.length()-5);k<ms.length();k++){lastTxt=ms.getString(k);st.addLine(lastTxt);}
       if(!item.isEmpty())st.setSummaryText(item);
       int nid=Math.abs(tid.hashCode())%100000+10;
-      Notification.Builder b=nb(c,CH).setSmallIcon(android.R.drawable.stat_notify_chat).setLargeIcon(avatar(name)).setContentTitle(name).setContentText(lastTxt)
-        .setSubText(item.isEmpty()?null:item).setStyle(ms.length()>1?st:new Notification.BigTextStyle().bigText(lastTxt)).setAutoCancel(true).setColor(0xff00aaff)
+      Notification.Builder b=nb(c,CH).setSmallIcon(c.getResources().getIdentifier("ic_notification","drawable",c.getPackageName())).setLargeIcon(avatar(name)).setContentTitle(name).setContentText(lastTxt)
+        .setSubText(item.isEmpty()?null:item).setStyle(ms.length()>1?st:new Notification.BigTextStyle().bigText(lastTxt)).setAutoCancel(true).setColor(0xff075b46)
         .setContentIntent(open(c,tid,nid)).setCategory(Notification.CATEGORY_MESSAGE).setNumber(ms.length()).setWhen(System.currentTimeMillis()).setShowWhen(true)
         .setGroup("gm_msgs");
       if(Build.VERSION.SDK_INT<26)b.setPriority(Notification.PRIORITY_HIGH).setDefaults(Notification.DEFAULT_ALL);
       nm.notify(nid,b.build());}}
   Bitmap avatar(String name){int s=128;Bitmap bm=Bitmap.createBitmap(s,s,Bitmap.Config.ARGB_8888);Canvas c=new Canvas(bm);Paint p=new Paint(Paint.ANTI_ALIAS_FLAG);
-    int[] cols={0xff00aaff,0xff02d15c,0xffff8a00,0xff965eeb,0xffff4053,0xff00b8a9};p.setColor(cols[(name.hashCode()&0x7fffffff)%cols.length]);c.drawCircle(s/2f,s/2f,s/2f,p);
+    int[] cols={0xff075b46,0xff02d15c,0xffff8a00,0xff965eeb,0xffff4053,0xff00b8a9};p.setColor(cols[(name.hashCode()&0x7fffffff)%cols.length]);c.drawCircle(s/2f,s/2f,s/2f,p);
     p.setColor(0xffffffff);p.setTextSize(58);p.setTypeface(Typeface.DEFAULT_BOLD);p.setTextAlign(Paint.Align.CENTER);String l=name.isEmpty()?"?":name.substring(0,1).toUpperCase();
     c.drawText(l,s/2f,s/2f-(p.descent()+p.ascent())/2,p);return bm;}
 }

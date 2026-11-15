@@ -18,6 +18,11 @@ with zipfile.ZipFile(R/os.environ.get('BASE_APK','apk/GlassMarket9.13.apk')) as 
 # Prefer the versioned SUGD.TJ launcher artwork over the legacy base icons.
 for icon in (R/'android-src/res').glob('mipmap-*/ic_launcher.png'):
  target=res/icon.parent.name/icon.name;target.parent.mkdir(exist_ok=True);target.write_bytes(icon.read_bytes())
+# Include adaptive launcher and monochrome notification resources, not only PNGs.
+import shutil
+for asset in (R/'android-src/res').rglob('*'):
+ if asset.is_file():
+  target=res/asset.relative_to(R/'android-src/res');target.parent.mkdir(parents=True,exist_ok=True);shutil.copyfile(asset,target)
 classes=B/'classes';classes.mkdir(exist_ok=True)
 run(T/'aapt','package','-f','-M',R/'android-src/AndroidManifest.xml','-S',res,'-I',J,'-F',B/'base.apk')
 compiler=['java','-jar',os.environ['ECJ_JAR']] if os.environ.get('ECJ_JAR') else ['java','com.sun.tools.javac.Main']

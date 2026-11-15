@@ -448,6 +448,7 @@ button:active,.btn:active{opacity:.82}
 <link rel="stylesheet" href="messenger.css">
 <link rel="stylesheet" href="sugd.css">
 <script src="theme.js"></script>
+<script src="ui-controls.js"></script>
 <link rel="icon" href="sugd-logo.svg" type="image/svg+xml">
 </head>
 <body>
@@ -463,7 +464,6 @@ button:active,.btn:active{opacity:.82}
 
       </div>
     </div>
-    <div class="sugd-hero"><div class="eyebrow">СУГД · МАРКЕТПЛЕЙС ОДЕЖДЫ</div><h1>Одежда рядом.<br>Прямой контакт.</h1><p>Находите своё.<br>Общайтесь с продавцами напрямую.</p><img src="sugd-logo.svg" alt=""><div class="hero-bottom"><span>Без посредников. По-соседски.</span><button onclick="go('sell')">Продать одежду</button></div></div>
     <div class="cats" id="cats"></div><div id="subcats" class="subcats" hidden></div>
     <div class="chips" id="fchips" hidden></div>
     <div class="sect"><h2 id="gTitle">Рекомендации</h2><span id="gCount"></span></div>
@@ -511,7 +511,7 @@ button:active,.btn:active{opacity:.82}
       <button class="mi2 danger" data-p="wipe"><span data-ic="trash"></span><span class="lt">Удалить все данные</span></button>
     </div>
     <div class="theme-setting"><label for="themeChoice">Оформление</label><select class="inp color-select" id="themeChoice"><option value="system">Как на устройстве</option><option value="light">Светлое</option><option value="dark">Тёмное</option></select></div>
-    <div class="foot">SUGD.TJ 9.19 · Одежда напрямую</div>
+    <div class="foot">SUGD.TJ 9.20 · Одежда напрямую</div>
   </section>
 </main>
 
@@ -971,7 +971,7 @@ function drawFilter(){
   $('sheet').innerHTML='<div class="grab"></div><div class="shead"><h3>Фильтры</h3><button class="ibtn" data-close="1">'+ic('x')+'</button></div>'
    +'<div class="flab">Категория</div><div class="wchips"><button class="chip'+(ft.cat==='all'?' on':'')+'" data-fc="all">Все</button>'
    +CATS.map(function(c){return '<button class="chip'+(ft.cat===c.id?' on':'')+'" data-fc="'+c.id+'">'+c.n+'</button>'}).join('')+'</div>'
-   +ATTRS.map(function(a){if(a.k==='size')return sizePicker(ft,true);var o=attrOpts(a,ft.cat==='all'?'':ft.cat,ft.f.gender,ft.section);if(a.k==='color')return '<div class="flab">Цвет</div>'+colorSelect(ft.f.color,true);return '<div class="flab">'+a.n+'</div><div class="wchips">'+o.map(function(v){return '<button class="chip'+(attrSelected(ft.f,a.k,v)?' on':'')+'" data-fa="'+a.k+'" data-v="'+esc(v)+'">'+esc(attrLabel(a.k,v,ft.f))+'</button>'}).join('')+'</div>'}).join('')
+   +ATTRS.map(function(a){if(a.k==='size')return sizePicker(ft,true);var o=attrOpts(a,ft.cat==='all'?'':ft.cat,ft.f.gender,ft.section);if(a.k==='color')return '<div class="flab">Цвет</div>'+colorSelect(ft.f.color,true);if(a.k==='mat')return '<div class="flab">Материал</div>'+GMControls.materials(ft.f.mat,o,true);return '<div class="flab">'+a.n+'</div><div class="wchips">'+o.map(function(v){return '<button class="chip'+(attrSelected(ft.f,a.k,v)?' on':'')+'" data-fa="'+a.k+'" data-v="'+esc(v)+'">'+esc(attrLabel(a.k,v,ft.f))+'</button>'}).join('')+'</div>'}).join('')
    +'<div class="units" id="filterSub">'+subButtons(ft.cat,ft.section,'data-fsection',true)+'</div>'
    +'<div class="flab">Цена, ₽</div><div class="row2"><div><input class="inp" id="fmin" inputmode="numeric" placeholder="от" value="'+esc(ft.pmin)+'"></div><div><input class="inp" id="fmax" inputmode="numeric" placeholder="до" value="'+esc(ft.pmax)+'"></div></div>'
    +'<div class="flab">Сортировка</div>'+sorts.map(function(s){return '<button class="radio'+(ft.sort===s[0]?' on':'')+'" data-fs="'+s[0]+'">'+s[1]+'<span class="rd"></span></button>'}).join('')
@@ -1026,7 +1026,7 @@ function renderItem(id,keep){
   // Similar items are ranked by the server, not a local same-category slice.
   var h='<div class="gal"><div class="slides" id="slides">'+ph.map(function(p){return '<img src="'+p+'" alt="">'}).join('')+'</div>'
    +(ph.length>1?'<span class="gnum" id="gnum">1 из '+ph.length+'</span>':'')
-   +'<div class="gtop"><button class="ibtn" data-a="back">'+ic('back')+'</button><span style="display:flex"><button class="ibtn" data-a="share">'+ic('share')+'</button><button class="ibtn'+(f?' on':'')+'" data-a="fav">'+ic('heart')+'</button></span></div></div>'
+   +'<div class="gtop"><button class="ibtn" data-a="back">'+ic('back')+'</button><span class="gallery-actions"><button class="ibtn" data-a="share">'+ic('share')+'</button><button class="ibtn'+(f?' on':'')+'" data-a="fav">'+ic('heart')+'</button></span></div></div>'
    +(VS.length>1?'<div class="vlab">Варианты: <b>'+(vi+1)+' из '+VS.length+'</b></div><div class="thumbs vars" id="thumbs">'+VS.map(function(v,i){return '<img src="'+v[0]+'" data-vi="'+i+'"'+(i===vi?' class="on"':'')+' alt="">'}).join('')+'</div>':ph.length>1?'<div class="thumbs" id="thumbs">'+ph.map(function(p,i){return '<img src="'+p+'" data-ti="'+i+'"'+(i?'':' class="on"')+' alt="">'}).join('')+'</div>':'')
    +'<div class="ibody wrap">'
    +'<div class="istat"><span>'+ic('eye')+(l.views||0)+'</span><span>'+ic('heart')+(l.favCount||0)+'</span><span class="r">'+ic('clock')+ago(l.createdAt)+'</span></div>'
@@ -1134,7 +1134,7 @@ function openSell(editId){
   F.ways=contactWays(F);delete F.tags;
   drawSell();$('sellPg').hidden=false;$('sellPg').scrollTop=0;
 }
-function attrsHtml(){F.a=F.a||{};if(!F.a.ageGroup)F.a.ageGroup=F.a.gender==='Детское'?'Детское':'Взрослое';if(F.a.gender==='Детское')F.a.gender='Унисекс';return ATTRS.map(function(a){if(a.k==='size')return sizePicker(F,false);var o=attrOpts(a,F.cat,F.a.gender,F.section);if(a.k==='color')return '<div class="fl" id="f-a_color"><label>Цвет</label>'+colorSelect(F.a.color,false)+'</div>';return '<div class="fl" id="f-a_'+a.k+'"><label>'+a.n+(a.k==='mat'?' <i>необязательно</i>':'')+'</label>'+(a.k==='mat'?'<div class="sub2">Можно выбрать несколько материалов</div>':'')+'<div class="units">'+o.map(function(v){return '<button class="chip'+(attrSelected(F.a,a.k,v)?' on':'')+'" data-attr="'+a.k+'" data-v="'+esc(v)+'" aria-pressed="'+attrSelected(F.a,a.k,v)+'">'+esc(attrLabel(a.k,v,F.a))+'</button>'}).join('')+'</div><div class="ehint">Выберите значение</div></div>'}).join('')}
+function attrsHtml(){F.a=F.a||{};if(!F.a.ageGroup)F.a.ageGroup=F.a.gender==='Детское'?'Детское':'Взрослое';if(F.a.gender==='Детское')F.a.gender='Унисекс';return ATTRS.map(function(a){if(a.k==='size')return sizePicker(F,false);var o=attrOpts(a,F.cat,F.a.gender,F.section);if(a.k==='color')return '<div class="fl" id="f-a_color"><label>Цвет</label>'+colorSelect(F.a.color,false)+'</div>';if(a.k==='mat')return '<div class="fl" id="f-a_mat"><label>Материал <i>необязательно</i></label>'+GMControls.materials(F.a.mat,o,false)+'<div class="sub2">Можно выбрать несколько материалов</div></div>';return '<div class="fl" id="f-a_'+a.k+'"><label>'+a.n+(a.k==='mat'?' <i>необязательно</i>':'')+'</label>'+(a.k==='mat'?'<div class="sub2">Можно выбрать несколько материалов</div>':'')+'<div class="units">'+o.map(function(v){return '<button class="chip'+(attrSelected(F.a,a.k,v)?' on':'')+'" data-attr="'+a.k+'" data-v="'+esc(v)+'" aria-pressed="'+attrSelected(F.a,a.k,v)+'">'+esc(attrLabel(a.k,v,F.a))+'</button>'}).join('')+'</div><div class="ehint">Выберите значение</div></div>'}).join('')}
 function keepDraft(){if(F&&!F.editId)jset(K.D,{f:F,v:photos})}
 function fld(k,lab,ph,attr,hint){return '<div class="fl" id="f-'+k+'"><label>'+lab+'</label><input class="inp" data-k="'+k+'" placeholder="'+ph+'" value="'+esc(F[k])+'" '+(attr||'')+'><div class="ehint">'+(hint||'Заполните поле')+'</div></div>'}
 function drawSell(){
@@ -1412,7 +1412,7 @@ var chatImg=false,chatPhotoTarget='';
     if(x=t.closest('[data-jump]')){jumpTo(x.dataset.jump);return}
     if(x=t.closest('[data-play]')){playV(+x.dataset.play,x);return}
     if(x=t.closest('[data-photo]')){photoDownload(fchat(pg.dataset.id),x.dataset.photo);return}
-    if(x=t.closest('[data-zoom]')){var z=document.createElement('div'),src=x.src;z.id='zoom';z.innerHTML='<div class="zoom-tools"><button data-save="1">Скачать фото</button><button data-close-zoom="1" aria-label="Закрыть фото">Закрыть</button></div><img src="'+esc(src)+'" alt="Фото в сообщении">';z.onclick=function(e){if(e.target.closest('[data-save]')){GMChatMedia.download(src).catch(function(){toast('Не удалось сохранить фото')});return}if(e.target===z||e.target.closest('[data-close-zoom]'))z.remove()};document.body.appendChild(z);return}});
+    if(x=t.closest('[data-zoom]')){var z=document.createElement('div'),src=x.src;z.id='zoom';z.setAttribute('role','dialog');z.setAttribute('aria-modal','true');z.setAttribute('aria-label','Просмотр фото');z.innerHTML='<div class="zoom-tools"><button data-close-zoom="1" aria-label="Закрыть фото">'+ic('x')+'</button><span>Фото</span><button data-save="1" aria-label="Скачать фото"><svg class="i" viewBox="0 0 24 24"><path d="M12 3v12m-5-5 5 5 5-5M4 16v5h16v-5"/></svg></button></div><img src="'+esc(src)+'" alt="Фото в сообщении">';z.onclick=function(e){if(e.target.closest('[data-save]')){GMChatMedia.download(src).catch(function(){toast('Не удалось сохранить фото')});return}if(e.target===z||e.target.closest('[data-close-zoom]'))z.remove()};document.body.appendChild(z);return}});
   pg.addEventListener('contextmenu',function(e){var b=e.target.closest('.bub');if(!b)return;e.preventDefault();msgMenu(+b.dataset.i)});
   pg.addEventListener('touchstart',function(e){var b=e.target.closest('.bub');if(!b||e.target.closest('[data-play],a,.shc'))return;sx=e.touches[0].clientX;sy=e.touches[0].clientY;lp=setTimeout(function(){lp=0;msgMenu(+b.dataset.i)},450)},{passive:true});
   pg.addEventListener('touchmove',function(e){if(lp&&(Math.abs(e.touches[0].clientX-sx)>8||Math.abs(e.touches[0].clientY-sy)>8)){clearTimeout(lp);lp=0}},{passive:true});
@@ -1581,7 +1581,7 @@ document.addEventListener('click',function(e){var b=e.target.closest('[data-a="c
  var k=b.dataset.a==='chat'?'chat':(b.dataset.v||b.dataset.p||'sell');if(NEED[k]){e.preventDefault();e.stopImmediatePropagation();show(NEED[k])}},true);
 guard();
 findServer();
-if(!g(TK)&&!g('sugd_welcome_seen')&&!el)show('');
+// Browsing starts directly in the catalog. Sign-in is shown only on an explicit action.
 })();
 (function(){var b=document.getElementById('authBtn');if(b&&!GM.logged()){b.classList.remove('danger');b.querySelector('.lt').textContent='Войти';var icon=b.querySelector('svg');if(icon)icon.outerHTML=ic('login');b.style.color='#075b46'}})();
 </script>

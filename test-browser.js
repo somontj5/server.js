@@ -19,7 +19,7 @@ const assert = require('assert/strict');
         return route.fulfill({status:response.status,contentType:'application/json',body:await response.text()});
       }
       if (url.hostname === 'gm.test') {
-        const file = ['theme.js','validation.js','categories.js','sizes.js','sizes-ui.js','chat-media.js','messenger.js','messenger.css','sugd.css','sugd-logo.svg'].find(x=>url.pathname==='/'+x)||'index.html';
+        const file = ['ui-controls.js','theme.js','validation.js','categories.js','sizes.js','sizes-ui.js','chat-media.js','messenger.js','messenger.css','sugd.css','sugd-logo.svg'].find(x=>url.pathname==='/'+x)||'index.html';
         return route.fulfill({contentType:file.endsWith('.svg')?'image/svg+xml':file.endsWith('.js')?'application/javascript':file.endsWith('.css')?'text/css':'text/html',body:fs.readFileSync('android-src/assets/www/'+file)});
       }
       if (/github/.test(url.hostname)) return route.fulfill({contentType:'text/plain',body:'https://gm.test/api'});
@@ -103,18 +103,18 @@ const assert = require('assert/strict');
     await page.click('[data-attr="ageGroup"][data-v="Взрослое"]');
     assert.deepEqual(await page.locator('[data-attr="gender"]').allTextContents(),['Женское','Мужское','Для всех']);
     await page.click('[data-cat="suits"]');
-    await page.click('[data-attr="mat"][data-v="Бамбук"]');await page.click('[data-attr="mat"][data-v="Флис"]');
+    await page.click('[data-material-choice="sell"] summary');await page.click('[data-material-choice] [data-choice="Бамбук"]');await page.click('[data-material-choice] [data-choice="Флис"]');
     assert.equal(await page.evaluate(()=>F.a.mat),'Бамбук, Флис');
-    assert.equal(await page.locator('[data-attr="mat"].on').count(),2);
-    await page.click('[data-attr="mat"][data-v="Бамбук"]');assert.equal(await page.evaluate(()=>F.a.mat),'Флис');
+    assert.equal(await page.locator('[data-material-choice] [aria-selected="true"]').count(),2);
+    await page.click('[data-material-choice] [data-choice="Бамбук"]');assert.equal(await page.evaluate(()=>F.a.mat),'Флис');
     await page.click('[data-attr="made"][data-v="Другая"]');assert.equal(await page.evaluate(()=>F.a.made),'Другая');
     await page.click('[data-cat="shoes"]');assert.equal(await page.evaluate(()=>F.a.mat),'');
-    assert.equal(await page.locator('[data-attr="mat"][data-v="Резина"]').count(),1);
-    assert.equal(await page.locator('[data-attr="mat"][data-v="Флис"]').count(),0);
+    assert.equal(await page.locator('[data-material-choice] [data-choice="Резина"]').count(),1);
+    assert.equal(await page.locator('[data-material-choice] [data-choice="Флис"]').count(),0);
     await page.click('[data-cat="under"]');await page.click('[data-leaf="under-socks"]');
-    assert.equal(await page.locator('[data-attr="mat"][data-v="Шерсть"]').count(),1);
-    await page.click('[data-attr="mat"][data-v="Шерсть"]');await page.click('[data-leaf="under-lingerie"]');
-    assert.equal(await page.evaluate(()=>F.a.mat),'');assert.equal(await page.locator('[data-attr="mat"][data-v="Шерсть"]').count(),0);
+    assert.equal(await page.locator('[data-material-choice] [data-choice="Шерсть"]').count(),1);
+    await page.click('[data-material-choice="sell"] summary');await page.click('[data-material-choice] [data-choice="Шерсть"]');await page.click('[data-leaf="under-lingerie"]');
+    assert.equal(await page.evaluate(()=>F.a.mat),'');assert.equal(await page.locator('[data-material-choice] [data-choice="Шерсть"]').count(),0);
     for(const cat of await page.evaluate(()=>CATS.map(x=>x.id))){await page.click('[data-cat="'+cat+'"]');assert.ok(!/[\\/()]/.test(await page.locator('#f-attrs').innerText()));}
     await page.click('[data-cat="bags"]');
     assert.equal(await page.locator('#f-a_size').count(),0);
@@ -218,7 +218,7 @@ const assert = require('assert/strict');
     await guest.goto('https://gm.test/#profile');await guest.waitForSelector('#authBtn');
     assert.equal(await guest.locator('#authBtn .lt').innerText(),'Войти');
     assert.equal(await guest.locator('#authBtn svg').innerHTML(),await guest.evaluate(()=>{var svg=document.createElementNS('http://www.w3.org/2000/svg','svg');svg.innerHTML=P.login;return svg.innerHTML}));
-    if(await guest.locator('#tgAuth').count())await guest.click('#taLater');
+    assert.equal(await guest.locator('#tgAuth').count(),0,'No blocking introduction on a fresh launch');
     await guest.click('#authBtn');await guest.waitForSelector('#tgAuth');
     assert.equal(await guest.locator('#tgAuth .marketplace-logo img').getAttribute('src'),'sugd-logo.svg');
     assert.equal(await guest.locator('#guestGo').count(),1);
