@@ -29,12 +29,13 @@ function fixture() {
   return {users,sessions,listings,codes:{},threads:{},reviews:[],searches:{}};
 }
 async function start(port=18091){
+ if(!port)port=await new Promise((resolve,reject)=>{const probe=require('node:net').createServer();probe.once('error',reject);probe.listen(0,'127.0.0.1',()=>{const chosen=probe.address().port;probe.close(()=>resolve(chosen))})});
  fs.mkdirSync(path.join(__dirname,'.local-build'),{recursive:true});
  const dir=fs.mkdtempSync(path.join(__dirname,'.local-build','gm-size-tests-')),file=path.join(dir,'db.json');fs.writeFileSync(file,JSON.stringify(fixture()));
  const child=spawn(process.execPath,['server.js'],{cwd:__dirname,env:{...process.env,PORT:String(port),GM_CHILD:'1',DB_FILE:file,BOT_TOKEN:'',AI_WORKER_TOKEN:'test-worker',GITHUB_ACTIONS:''},stdio:['ignore','pipe','pipe']});
  let log='';child.stdout.on('data',d=>log+=d);child.stderr.on('data',d=>log+=d);
  const base='http://127.0.0.1:'+port;
- for(let i=0;i<100;i++){try{const r=await fetch(base+'/health');if(r.ok)return {base,child,dir,stop:async()=>{const done=new Promise(r=>child.once('exit',r));child.kill('SIGTERM');await done;fs.rmSync(dir,{recursive:true,force:true})}}}catch{}await new Promise(r=>setTimeout(r,50));if(child.exitCode!==null)break}
+ for(let i=0;i<100;i++){try{if(!log.includes('Сервер: http://0.0.0.0:'))throw Error('Waiting for own server');const r=await fetch(base+'/health');if(r.ok)return {base,child,dir,stop:async()=>{const done=new Promise(r=>child.once('exit',r));child.kill('SIGTERM');await done;fs.rmSync(dir,{recursive:true,force:true})}}}catch{}await new Promise(r=>setTimeout(r,50));if(child.exitCode!==null)break}
  child.kill('SIGTERM');fs.rmSync(dir,{recursive:true,force:true});throw Error('Fixture startup failed: '+log);
 }
 module.exports={fixture,start};

@@ -3,8 +3,8 @@ const { chromium } = require('./.local-build/node_modules/playwright');
 const fs = require('fs');
 const assert = require('assert/strict');
 (async () => {
-  const service=await require('./test-fixture').start(8091);
-  const browser = await chromium.launch({headless:true,executablePath:process.env.CHROME_PATH||chromium.executablePath(),args:['--no-sandbox']});
+  const service=await require('./test-fixture').start(0);
+  const browser = await chromium.launch({headless:true,executablePath:process.env.CHROME_PATH||chromium.executablePath(),args:['--no-sandbox','--use-fake-ui-for-media-stream','--use-fake-device-for-media-stream']});
   try {
     const context = await browser.newContext({viewport:{width:320,height:700}});
     const page = await context.newPage(), errors = [];let networkDown=false;
@@ -13,14 +13,14 @@ const assert = require('assert/strict');
       const url = new URL(route.request().url());
       if (url.hostname === 'gm.test' && url.pathname.startsWith('/api/')) {
         if(networkDown)return route.abort('internetdisconnected');
-        const req = route.request(), response = await fetch((process.env.GM_TEST_API || 'http://127.0.0.1:8091') + url.pathname.slice(4) + url.search, {
+        const req = route.request(), response = await fetch((process.env.GM_TEST_API || service.base) + url.pathname.slice(4) + url.search, {
           method:req.method(),headers:{'content-type':'application/json',authorization:'Bearer test-buyer'},body:req.postData()||undefined
         });
         return route.fulfill({status:response.status,contentType:'application/json',body:await response.text()});
       }
       if (url.hostname === 'gm.test') {
-        const file = ['validation.js','categories.js','sizes.js','sizes-ui.js','chat-media.js'].find(x=>url.pathname==='/'+x)||'index.html';
-        return route.fulfill({contentType:file.endsWith('.js')?'application/javascript':'text/html',body:fs.readFileSync('android-src/assets/www/'+file)});
+        const file = ['validation.js','categories.js','sizes.js','sizes-ui.js','chat-media.js','messenger.js','messenger.css'].find(x=>url.pathname==='/'+x)||'index.html';
+        return route.fulfill({contentType:file.endsWith('.js')?'application/javascript':file.endsWith('.css')?'text/css':'text/html',body:fs.readFileSync('android-src/assets/www/'+file)});
       }
       if (/github/.test(url.hostname)) return route.fulfill({contentType:'text/plain',body:'https://gm.test/api'});
       return route.abort();

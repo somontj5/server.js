@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""Repackage unchanged native shell with versioned WebView source; sign using official apksigner.
+"""Compile native Java and package versioned WebView source; sign using official apksigner.
 Usage: python3 build-apk.py --signer JAR --keystore JKS --password-file FILE
-Native classes.dex/resources are intentionally retained; no Android SDK downloads required.
+Pass --android-jar and --d8 to compile Java from source, or --dex for an already compiled payload. All tools stay local to the workspace.
 """
 import argparse
 import pathlib
@@ -78,9 +78,30 @@ def main():
     parser.add_argument('--signer', required=True)
     parser.add_argument('--keystore', required=True)
     parser.add_argument('--password-file', required=True)
-    parser.add_argument('--base', default='apk/GlassMarket9.15.apk')
-    parser.add_argument('--out', default='apk/GlassMarket9.16.apk')
+    parser.add_argument('--base', default='apk/GlassMarket9.16.apk')
+    parser.add_argument('--android-jar', help='Android API 34 android.jar')
+    parser.add_argument('--d8', help='R8 JAR providing D8')
+    parser.add_argument('--dex', help='Compiled native classes.dex, inside workspace')
+    parser.add_argument('--out', default='apk/GlassMarket9.17.apk')
     args = parser.parse_args()
+    if args.android_jar and args.d8:
+        classes, dex_dir = inside('.local-build/native-classes'), inside('.local-build/native-dex')
+        classes.mkdir(exist_ok=True)
+        for old in classes.rglob('*.class'):
+            old.unlink()
+        dex_dir.mkdir(exist_ok=True)
+        sources = sorted(inside('android-src/src').rglob('*.java'))
+        subprocess.run(['java', 'com.sun.tools.javac.Main', '-source', '8', '-target', '8',
+                        '-bootclasspath', str(inside(args.android_jar)), '-d', str(classes)] + [str(p) for p in sources], check=True)
+        native_jar = inside('.local-build/native-classes.jar')
+        with zipfile.ZipFile(native_jar, 'w') as archive:
+            for file in classes.rglob('*.class'):
+                archive.write(file, file.relative_to(classes).as_posix())
+        subprocess.run(['java', '-cp', str(inside(args.d8)), 'com.android.tools.r8.D8', '--min-api', '24',
+                        '--lib', str(inside(args.android_jar)), '--output', str(dex_dir), str(native_jar)], check=True)
+        args.dex = str(dex_dir / 'classes.dex')
+    if not args.dex:
+        parser.error('Native changes require --android-jar and --d8, or an explicitly compiled --dex')
     source = inside('android-src/assets/www/index.html')
     manifest = ET.parse(inside('android-src/AndroidManifest.xml')).getroot()
     ns = '{http://schemas.android.com/apk/res/android}'
@@ -92,6 +113,8 @@ def main():
             if entry.filename.upper().startswith('META-INF/') or entry.filename.startswith('assets/www/'):
                 continue
             content = original.read(entry)
+            if entry.filename == 'classes.dex' and args.dex:
+                content = inside(args.dex).read_bytes()
             if entry.filename == 'assets/www/index.html':
                 content = source.read_bytes()
             if entry.filename == 'AndroidManifest.xml':
@@ -115,13 +138,13 @@ def main():
                             '--v3-signing-enabled', 'true', '--out', str(output), str(temporary)], check=True)
     subprocess.run(signer + ['verify', '--verbose', '--print-certs', str(output)], check=True)
     with zipfile.ZipFile(output) as built, zipfile.ZipFile(inside(args.base)) as original:
-        assert built.read('classes.dex') == original.read('classes.dex'), 'Unexpected native shell change'
+        assert built.read('classes.dex') == (inside(args.dex).read_bytes() if args.dex else original.read('classes.dex')), 'Native code mismatch'
         assert len(built.namelist()) == len(set(built.namelist())), 'Duplicate APK entries'
         for asset in inside('android-src/assets/www').rglob('*'):
             if asset.is_file():
                 name = 'assets/www/' + asset.relative_to(inside('android-src/assets/www')).as_posix()
                 assert built.read(name) == asset.read_bytes(), 'Client asset mismatch: ' + name
-    print(f'Built {output.name}; version {version} ({code}); native shell retained and signatures verified')
+    print(f'Built {output.name}; version {version} ({code}); native source packaged and signatures verified')
 
 if __name__ == '__main__':
     main()

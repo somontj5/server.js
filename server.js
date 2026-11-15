@@ -577,7 +577,8 @@ route('GET', '/listings/:id/similar', 0, (q, b, u, r, p) => {
       if (tag.startsWith('a:')) score += 0.35;
       if (tag.startsWith('z:')) score += 0.5;
     }
-    const sameGroup = !!l.sub && l.sub !== 'other' && x.sub === l.sub;
+    const baseCategory = Catalog.normalize(l), candidateCategory = Catalog.normalize(x);
+    const sameGroup = baseCategory.sub !== 'other' && candidateCategory.sub === baseCategory.sub;
     if (!sameGroup && !semantic) return null; // never match on seller/price/gender alone
     if (sameGroup) score += 6;
     if (l.section && x.section === l.section) score += 10;
@@ -663,8 +664,8 @@ route('POST', '/listings/:id/thread', 1, (q, b, u, r, p) => {   // открыт�
 });
 function myThread(p, u) { const t = db.threads[p.id] || need(404, 'Диалог не найден'); if (t.buyerId !== u.id && t.sellerId !== u.id) need(403, 'Нет доступа'); return t; }
 // сообщение для клиента: фото/голосовые, ответ, правка, удаление, закреп, прочтение
-const msgOut = (m, uid) => ({ id:m.id, text:m.del ? '' : m.text, t:m.t, u:m.u || m.t, lid:m.lid, mine: m.from === uid, img: m.del ? undefined : m.img, voice: m.del ? undefined : m.voice, dur: m.dur, re: m.re && { id:m.re.id, text:m.re.text, mine: m.re.mine === uid }, ed: m.ed ? 1 : undefined, del: m.del ? 1 : undefined });
-const shortMsg = m => m && Object.assign({}, m, { re: undefined, img: m.img ? 1 : undefined, voice: m.voice ? 1 : undefined, text: m.del ? 'Сообщение удалено' : (m.text || (m.img ? '📷 Фото' : m.voice ? '🎤 Голосовое' : '')) });
+const msgOut = (m, uid) => ({ id:m.id, clientId:m.clientId, text:m.del ? '' : m.text, t:m.t, u:m.u || m.t, lid:m.lid, mine: m.from === uid, img: m.del ? undefined : m.img, voice: m.del ? undefined : m.voice, dur: m.dur, re: m.re && { id:m.re.id, text:m.re.text, mine: m.re.mine === uid }, ed: m.ed ? 1 : undefined, del: m.del ? 1 : undefined });
+const shortMsg = m => m && Object.assign({}, m, { re: undefined, img: m.img ? 1 : undefined, voice: m.voice ? 1 : undefined, text: m.del ? '' : m.text, preview: m.del ? 'Сообщение удалено' : (m.text || (m.img ? 'Фото' : m.voice ? 'Голосовое сообщение' : m.lid ? 'Объявление' : '')) });
 route('GET', '/threads/:id', 1, (q, b, u, r, p) => {
   const t = myThread(p, u), me = u.id === t.buyerId; if (me) { t.uB = 0; t.rB = now(); } else { t.uS = 0; t.rS = now(); } touch();
   const since = +q.since || 0;
@@ -676,13 +677,27 @@ route('GET', '/threads/:id/messages/:mid/photo', 1, (q, b, u, r, p) => {
   if (m.del || !m.img) need(404, 'Фото недоступно');
   return { img: m.img };
 });
+route('GET', '/threads/:id/messages/:mid/voice', 1, (q, b, u, r, p) => {
+  const t = myThread(p, u), m = myMsg(t, p.mid, u);
+  if (m.del || !m.voice) need(404, 'Голосовое недоступно');
+  return { voice:m.voice, dur:m.dur };
+});
 const MEDIA = (v, re, max) => typeof v === 'string' && re.test(v) && v.length <= max ? v : '';
 route('POST', '/threads/:id/messages', 1, (q, b, u, r, p) => {
   const t = myThread(p, u), text = str(b.text, 2000), img = MEDIA(b.img, /^data:image\/(jpeg|png|webp);base64,/, 900e3), voice = MEDIA(b.voice, /^data:audio\/[\w.+-]+(;codecs=[\w]+)?;base64,/, 1.5e6);
   if (b.img && !img) need(400, 'Фото повреждено или больше 900 КБ');
   if (b.voice && !voice) need(400, 'Голосовое повреждено или слишком большое');
   if (!text && !img && !voice) need(400, 'Пустое сообщение');
-  const m = { id: rid(4), from: u.id, text, t: now() }; if (b.listingId && db.listings[b.listingId]) m.lid = String(b.listingId);
+  const clientId = typeof b.clientId === 'string' && /^[A-Za-z0-9_-]{8,80}$/.test(b.clientId) ? b.clientId : '';
+  if (b.clientId && !clientId) need(400, 'Некорректный идентификатор сообщения');
+  if (clientId) {
+    const previous = t.messages.find(x => x.from === u.id && x.clientId === clientId);
+    if (previous) {
+      if (!previous.del && (previous.text !== text || (previous.img || '') !== img || (previous.voice || '') !== voice)) need(409, 'Идентификатор уже использован');
+      return msgOut(previous, u.id);
+    }
+  }
+  const m = { id: rid(4), clientId:clientId || undefined, from: u.id, text, t: now() }; if (b.listingId && db.listings[b.listingId]) m.lid = String(b.listingId);
   if (img) m.img = img; if (voice) { m.voice = voice; m.dur = Math.min(600, Math.max(0, +b.dur || 0)); }
   if (b.re) { const o = t.messages.find(x => x.id === b.re); if (o) m.re = { id:o.id, text: o.del ? 'Сообщение удалено' : str(o.text || (o.img ? '📷 Фото' : o.voice ? '🎤 Голосовое' : ''), 120), mine: o.from }; }
   t.messages.push(m); if (t.messages.length > 3000) t.messages.splice(0, t.messages.length - 3000);
@@ -816,10 +831,10 @@ http.createServer((req, res) => {
   if (lm) {
     const l = db.listings[lm[1]], esc = v => String(v || '').replace(/[&<>"]/g, c => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;' })[c]);
     const appLink = 'glassmarket://listing/' + encodeURIComponent(lm[1]);
-    const download = 'https://github.com/somontj5/server.js/raw/main/apk/GlassMarket9.16.apk';
+    const download = 'https://github.com/somontj5/server.js/raw/main/apk/GlassMarket9.17.apk';
     const intent = 'intent://listing/' + encodeURIComponent(lm[1]) + '#Intent;scheme=glassmarket;package=ru.glassmarket.app;S.browser_fallback_url=' + encodeURIComponent(download) + ';end';
     const html = l && !l.archived ? `<!doctype html><meta charset=utf-8><meta name=viewport content="width=device-width,initial-scale=1"><title>${esc(l.name)}</title><meta property="og:title" content="${esc(l.name + ' — ' + (l.price||''))}"><meta property="og:description" content="${esc('Ряд ' + l.row + ', магазин №' + l.shopNum)}">
-<body style="font-family:sans-serif;max-width:520px;margin:auto;padding:12px">${l.photos[0] ? `<img src="/l/${esc(l.id)}/photo" style="width:100%;border-radius:12px">` : ''}<h2>${esc(l.name)}</h2><h3>${esc(l.price || 'цена не указана')}</h3><p>📍 ${l.bazaar ? 'Базар ' + esc(l.bazaar) + ', ' : ''}Ряд ${esc(l.row)}, магазин №${esc(l.shopNum)} (${esc(l.shopName)})</p>${l.material ? `<p>🧵 Материал: ${esc(l.material)}</p>` : ''}<p style="white-space:pre-wrap">${esc(l.desc)}</p><a id="openApp" href="${esc(intent)}" style="display:block;text-align:center;background:#00aaff;color:#fff;padding:14px;border-radius:12px;text-decoration:none">Открыть в СтеклоМаркет</a><p style="text-align:center"><a href="${download}">Скачать приложение 9.16</a></p><p style="color:#777;font-size:13px">Если приложение не открылось автоматически, нажмите кнопку выше.</p><script>if(/Android/i.test(navigator.userAgent))location.href=${JSON.stringify(appLink)};</script></body>`
+<body style="font-family:sans-serif;max-width:520px;margin:auto;padding:12px">${l.photos[0] ? `<img src="/l/${esc(l.id)}/photo" style="width:100%;border-radius:12px">` : ''}<h2>${esc(l.name)}</h2><h3>${esc(l.price || 'цена не указана')}</h3><p>📍 ${l.bazaar ? 'Базар ' + esc(l.bazaar) + ', ' : ''}Ряд ${esc(l.row)}, магазин №${esc(l.shopNum)} (${esc(l.shopName)})</p>${l.material ? `<p>🧵 Материал: ${esc(l.material)}</p>` : ''}<p style="white-space:pre-wrap">${esc(l.desc)}</p><a id="openApp" href="${esc(intent)}" style="display:block;text-align:center;background:#00aaff;color:#fff;padding:14px;border-radius:12px;text-decoration:none">Открыть в СтеклоМаркет</a><p style="text-align:center"><a href="${download}">Скачать приложение 9.17</a></p><p style="color:#777;font-size:13px">Если приложение не открылось автоматически, нажмите кнопку выше.</p><script>if(/Android/i.test(navigator.userAgent))location.href=${JSON.stringify(appLink)};</script></body>`
       : '<!doctype html><meta charset=utf-8><h3 style="font-family:sans-serif">Объявление снято с публикации</h3>';
     res.writeHead(l && !l.archived ? 200 : 404, { 'content-type': 'text/html; charset=utf-8', 'cache-control':'no-store', 'x-content-type-options':'nosniff' }); return res.end(html);
   }
