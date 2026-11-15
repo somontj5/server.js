@@ -24,7 +24,7 @@ function fixture() {
   for(const l of Object.values(listings)){
     if(l.cat==='clothes')Object.assign(l,Catalog.normalize(l));
     const text=[l.name,l.desc,l.material,l.a&&l.a.mat,l.mtags].filter(Boolean).join(' ');
-    l.aiVersion=crypto.createHash('sha256').update(JSON.stringify(['tags-v2',text,Tags.layer1(l),Tags.DICT()])).digest('hex');
+    l.aiVersion=crypto.createHash('sha256').update(JSON.stringify(['tags-v3',text,Tags.layer1(l),Tags.DICT()])).digest('hex');
   }
   return {users,sessions,listings,codes:{},threads:{},reviews:[],searches:{}};
 }

@@ -63,3 +63,48 @@ select.color-select option{color:var(--ink);background:var(--surface)}.theme-set
 
 :root[data-theme="dark"] .check.on .bx,:root[data-theme="dark"] .ubadge,:root[data-theme="dark"] .nav .nb{color:var(--accent-text);background:var(--accent-fill)}
 :root[data-theme="dark"] .bub.fl{background:#4b6037!important;color:#f0f4ec}
+
+/* 9.20: shared themed controls; never allow a bitmap arrow to tile. */
+select.color-select{background-repeat:no-repeat!important;background-position:right 16px center!important;background-size:20px 20px!important}
+:root[data-theme] #sheet.sheet{isolation:isolate;overflow:hidden;border-radius:26px 26px 0 0;background:var(--surface);color:var(--ink)}
+#sheet.sheet.st>.shd{border-radius:0;flex-shrink:0;background:var(--surface);padding:12px 0 0}
+#sheet.sheet .shead{background:var(--surface);margin:0;padding:10px 0 14px}
+#sheet.sheet .sbody,#sheet.sheet .sfoot{background:var(--surface)}
+#sheet.sheet .sbody{margin:0 -16px;padding:0 16px;scroll-padding-bottom:86px}
+.ccells{background:transparent;gap:8px;border-radius:0}
+.ccells .ccell{background:var(--surface);border:1px solid var(--line);border-radius:15px;padding:14px;gap:12px;min-height:58px}
+.ccells .ccell.on{background:var(--selected);border-color:var(--focus)}
+.ccells .ccell .rd{box-shadow:none;border:2px solid var(--mut);width:20px;height:20px}
+.ccells .ccell.on .rd{border:6px solid var(--blue);background:var(--surface)}
+.gtop{gap:12px;padding:12px}.gallery-actions{display:flex;gap:10px}
+.gtop .ibtn{width:44px;height:44px;border-radius:50%;background:var(--surface-raised);color:var(--ink);border:1px solid var(--line)}
+#crec{background:var(--surface-raised);color:var(--ink);border-top:1px solid var(--line);box-shadow:0 -4px 18px #0000000d}
+#crec .rec-timeline,#crec .rec-timeline b{color:var(--ink)}#crec #recState{color:var(--mut)}
+#crec .rec-wave{color:var(--blue);gap:3px}#crec.paused .rec-wave{color:var(--mut)}
+#crec .rec-delete{background:color-mix(in srgb,var(--red) 12%,var(--surface));color:var(--red)}
+#crec .rec-pause{background:var(--soft);color:var(--ink)}
+#crec .rec-preview{background:var(--selected);color:var(--blue)}
+#crec .rec-send{background:var(--accent-fill);color:var(--accent-text)}
+.media-draft,.draft-head,.draft-caption{background:var(--bg);color:var(--ink);border-color:var(--line)}
+.draft-caption textarea{background:var(--surface);color:var(--ink)}.draft-caption .snd{background:var(--accent-fill);color:var(--accent-text)}
+.voice-wave i{background:var(--mut)}.voice-track:before{background:var(--blue)}.mvc .voice-time{color:var(--mut)}
+#zoom{display:flex;align-items:center;justify-content:center;background:#080d0b;isolation:isolate;padding:74px 0 16px}
+#zoom img{width:100%;max-width:100%;height:100%;max-height:100%;object-fit:contain}
+#zoom .zoom-tools{position:absolute;top:0;left:0;right:0;padding:12px 16px;display:flex;align-items:center;gap:12px;background:#101a17;color:#fff;min-height:68px}
+#zoom .zoom-tools span{flex:1;text-align:center;font-size:15px;font-weight:600}
+#zoom .zoom-tools button{padding:0;width:44px;height:44px;min-height:44px;display:grid;place-items:center;background:#ffffff14;color:#fff;border:1px solid #ffffff20;border-radius:50%}
+#zoom .zoom-tools .i{width:23px;height:23px}
+/* Custom dropdowns work identically in Android WebView and both app themes. */
+.choice-field{position:relative;min-width:0}.native-choice{position:absolute!important;width:1px!important;height:1px!important;opacity:0!important;pointer-events:none!important;padding:0!important;border:0!important}
+.app-dropdown{position:relative;min-width:0;color:var(--ink)}
+.app-dropdown summary{list-style:none;display:flex;align-items:center;gap:12px;width:100%;min-height:50px;padding:12px 14px;background:var(--surface);border:1px solid var(--line);border-radius:15px;cursor:pointer;font-size:15px}
+.app-dropdown summary::-webkit-details-marker{display:none}.app-dropdown summary::marker{content:''}
+.app-dropdown summary:focus-visible{outline:2px solid var(--focus);outline-offset:2px}.app-dropdown[open] summary{border-color:var(--focus)}
+.app-dropdown .choice-value{flex:1;min-width:0;line-height:1.5;overflow-wrap:anywhere}.app-dropdown .choice-chevron{flex:none;width:20px;height:20px;color:var(--mut);transition:transform .15s}
+.app-dropdown[open] .choice-chevron{transform:rotate(180deg)}
+.choice-options{position:relative;display:flex;flex-direction:column;gap:2px;max-height:270px;overflow-y:auto;overscroll-behavior:contain;padding:6px;background:var(--surface-raised);border:1px solid var(--line);border-radius:15px;margin-top:6px;box-shadow:0 4px 14px #00000008}
+.choice-option{display:flex;align-items:center;gap:10px;text-align:left;color:var(--ink);padding:12px 10px;border-radius:10px;min-height:46px;font-size:14px;flex:none}
+.choice-option[aria-selected="true"]{background:var(--selected);font-weight:650}.choice-option .choice-mark{margin-left:auto;width:18px;flex:none;color:var(--blue)}
+.choice-option:not([aria-selected="true"]) .choice-mark{visibility:hidden}.choice-done{margin:4px;color:var(--blue);padding:10px;border-radius:10px;background:var(--soft);min-height:44px;font-weight:600}
+
+.profile-photo-field .av{color:var(--blue)}

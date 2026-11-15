@@ -48,7 +48,12 @@ const fs=require('node:fs'),path=require('node:path'),assert=require('node:asser
  holdSync=false;assert.equal(await page.evaluate(async tid=>(await GM.api('GET','/threads/'+tid)).messages.length,chat.tid),1,'lost response retry must not duplicate a sent message');
  const photo=await page.evaluate(()=>{var cv=document.createElement('canvas');cv.width=380;cv.height=240;var g=cv.getContext('2d');g.fillStyle='#e4f0f4';g.fillRect(0,0,380,240);g.fillStyle='#5e91a5';g.fillRect(120,40,140,150);return cv.toDataURL('image/png')});
  await page.evaluate(({photo,id})=>chatPreviewPhoto(photo,id),{photo,id:chat.id});await page.waitForSelector('#photoDraft');await page.fill('#photoCaption','Вот этот цвет');await page.click('[data-photo-send]');await page.waitForSelector('#cmsgs .mimg');await page.waitForSelector('#photoDraft',{state:'detached'});
- await page.click('#cmic');await page.waitForSelector('#crec:not([hidden])');await page.waitForTimeout(1600);
+ await page.evaluate(()=>SugdTheme.set('dark'));await page.click('#cmic');await page.waitForSelector('#crec:not([hidden])');await page.waitForTimeout(1600);
+ assert.equal(await page.locator('#crec').evaluate(e=>getComputedStyle(e).backgroundColor),'rgb(37, 54, 45)');
+ assert.equal(await page.locator('.rec-wave i').count(),32);
+ await page.evaluate(()=>{var r=GMMessenger.recording();r.wave=[];var frame=0;r.analyser={fftSize:32,getByteTimeDomainData:function(data){frame++;data.fill(128+frame*2)}}});
+ await page.waitForTimeout(650);const wave=await page.locator('.rec-wave i').evaluateAll(es=>es.map(e=>parseFloat(e.style.height)));assert.ok(new Set(wave).size>=4);assert.ok(wave[31]>wave[30]&&wave[30]>wave[29]);
+ await page.screenshot({path:'.local-build/920-recorder-dark.png'});
  await page.click('[data-rec="pause"]');assert.equal(await page.evaluate(()=>GMMessenger.recording().running),false);
  const paused=await page.locator('#rtm').innerText();await page.waitForTimeout(1100);assert.equal(await page.locator('#rtm').innerText(),paused,'paused duration must stop');
  await page.screenshot({path:'.local-build/chat-recorder-9.17.png'});

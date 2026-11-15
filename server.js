@@ -242,7 +242,7 @@ function recommend(arr, u) {
 const AI_WORKER_TOKEN = process.env.AI_WORKER_TOKEN || (TOKEN
   ? crypto.createHmac('sha256', TOKEN).update('glassmarket-ai-worker-v1').digest('hex') : '');
 const aiVersion = l => crypto.createHash('sha256').update(JSON.stringify([
-  'tags-v2', tagText(l), TAGS.layer1(l), TAGS.DICT()
+  'tags-v3', tagText(l), TAGS.layer1(l), TAGS.DICT()
 ])).digest('hex');
 let aiStatus = db.aiStatus || { state: 'not_run', processed: 0 };
 for (const l of Object.values(db.listings)) {
@@ -598,8 +598,12 @@ route('GET', '/listings/:id/similar', 0, (q, b, u, r, p) => {
   const baseWords = new Set(words(l.name));
   const candidates = Object.values(db.listings).filter(x => !x.archived && x.id !== l.id && !hidden.has(x.id) && (!u || x.sellerId !== u.id));
   const recOrder = new Map(recommend(candidates, u).map((x, i) => [x.id, i]));
+  const productKeys = new Set(['двойка','тройка','халат','костюм','платье','юбка','рубашка','футболка','худи','свитер','кардиган','кофта','брюки','джинсы','шорты','куртка','шуба','пальто']);
+  const baseProducts=TAGS.layer2(l.name).tags.filter(t=>productKeys.has(t));
   const ranked = candidates.map(x => {
     if (Sizes.context(l).kids !== Sizes.context(x).kids) return null;
+    const baseCategory = Catalog.normalize(l), candidateCategory = Catalog.normalize(x);
+    if(baseCategory.sub!=='other'&&candidateCategory.sub!=='other'&&baseCategory.sub!==candidateCategory.sub)return null;
     let score = 0, semantic = 0;
     for (const tag of (x.tags || makeTags(x))) if (baseTags.has(tag)) {
       if (tag.startsWith('k:') && !['Одежда','Другое','взрослое','детское','женское','мужское','унисекс'].includes(tag.slice(2))) { score += 2; semantic++; }
@@ -607,9 +611,9 @@ route('GET', '/listings/:id/similar', 0, (q, b, u, r, p) => {
       if (tag.startsWith('a:')) score += 0.35;
       if (tag.startsWith('z:')) score += 0.5;
     }
-    const baseCategory = Catalog.normalize(l), candidateCategory = Catalog.normalize(x);
     const sameGroup = baseCategory.sub !== 'other' && candidateCategory.sub === baseCategory.sub;
-    if (!sameGroup && !semantic) return null; // never match on seller/price/gender alone
+    const sameProduct = baseProducts.some(t=>TAGS.layer2(x.name).tags.includes(t));
+    if (!sameGroup && !sameProduct) return null; // never match on seller/price/gender alone
     if (sameGroup) score += 6;
     if (l.section && x.section === l.section) score += 10;
     const a = l.a || {}, b = x.a || {};
@@ -861,10 +865,10 @@ http.createServer((req, res) => {
   if (lm) {
     const l = db.listings[lm[1]], esc = v => String(v || '').replace(/[&<>"]/g, c => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;' })[c]);
     const appLink = 'glassmarket://listing/' + encodeURIComponent(lm[1]);
-    const download = 'https://github.com/somontj5/server.js/raw/main/apk/SUGD.TJ-9.19.apk';
+    const download = 'https://github.com/somontj5/server.js/raw/main/apk/SUGD.TJ-9.20.apk';
     const intent = 'intent://listing/' + encodeURIComponent(lm[1]) + '#Intent;scheme=glassmarket;package=ru.glassmarket.app;S.browser_fallback_url=' + encodeURIComponent(download) + ';end';
     const html = l && !l.archived ? `<!doctype html><meta charset=utf-8><meta name=viewport content="width=device-width,initial-scale=1"><title>${esc(l.name)}</title><meta property="og:title" content="${esc(l.name + ' — ' + (l.price||''))}"><meta property="og:description" content="${esc('Ряд ' + l.row + ', магазин №' + l.shopNum)}">
-<body style="font-family:sans-serif;max-width:520px;margin:auto;padding:12px">${l.photos[0] ? `<img src="/l/${esc(l.id)}/photo" style="width:100%;border-radius:12px">` : ''}<h2>${esc(l.name)}</h2><h3>${esc(l.price || 'цена не указана')}</h3><p>📍 ${l.bazaar ? 'Базар ' + esc(l.bazaar) + ', ' : ''}${l.sector ? 'сектор ' + esc(l.sector) + ', ' : ''}Ряд ${esc(l.row)}, магазин №${esc(l.shopNum)} (${esc(l.shopName)})</p>${l.material ? `<p>🧵 Материал: ${esc(l.material)}</p>` : ''}<p style="white-space:pre-wrap">${esc(l.desc)}</p><a id="openApp" href="${esc(intent)}" style="display:block;text-align:center;background:#075b46;color:#fff;padding:14px;border-radius:12px;text-decoration:none">Открыть в SUGD.TJ</a><p style="text-align:center"><a href="${download}">Скачать SUGD.TJ 9.19</a></p><p style="color:#777;font-size:13px">Если приложение не открылось автоматически, нажмите кнопку выше.</p><script>if(/Android/i.test(navigator.userAgent))location.href=${JSON.stringify(appLink)};</script></body>`
+<body style="font-family:sans-serif;max-width:520px;margin:auto;padding:12px">${l.photos[0] ? `<img src="/l/${esc(l.id)}/photo" style="width:100%;border-radius:12px">` : ''}<h2>${esc(l.name)}</h2><h3>${esc(l.price || 'цена не указана')}</h3><p>📍 ${l.bazaar ? 'Базар ' + esc(l.bazaar) + ', ' : ''}${l.sector ? 'сектор ' + esc(l.sector) + ', ' : ''}Ряд ${esc(l.row)}, магазин №${esc(l.shopNum)} (${esc(l.shopName)})</p>${l.material ? `<p>🧵 Материал: ${esc(l.material)}</p>` : ''}<p style="white-space:pre-wrap">${esc(l.desc)}</p><a id="openApp" href="${esc(intent)}" style="display:block;text-align:center;background:#075b46;color:#fff;padding:14px;border-radius:12px;text-decoration:none">Открыть в SUGD.TJ</a><p style="text-align:center"><a href="${download}">Скачать SUGD.TJ 9.20</a></p><p style="color:#777;font-size:13px">Если приложение не открылось автоматически, нажмите кнопку выше.</p><script>if(/Android/i.test(navigator.userAgent))location.href=${JSON.stringify(appLink)};</script></body>`
       : '<!doctype html><meta charset=utf-8><h3 style="font-family:sans-serif">Объявление снято с публикации</h3>';
     res.writeHead(l && !l.archived ? 200 : 404, { 'content-type': 'text/html; charset=utf-8', 'cache-control':'no-store', 'x-content-type-options':'nosniff' }); return res.end(html);
   }
