@@ -3,12 +3,12 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="theme-color" content="#ffffff">
+<meta name="theme-color" content="#f7f8f2">
 <meta name="color-scheme" content="light only">
-<title>СтеклоМаркет</title>
+<title>SUGD.TJ — вещи и люди</title>
 <style>
 *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
-:root{--blue:#00aaff;--blue-d:#0099f7;--green:#02d15c;--green-d:#00b84f;--red:#ff4053;--ink:#000;--ink2:#2f2f2f;--mut:#8f8f8f;--line:#ebebeb;--bg:#fff;--gray:#f2f1f0;--gray2:#f7f7f7;--r:12px}
+:root{--blue:#075b46;--blue-d:#034332;--green:#087f5b;--green-d:#056347;--red:#ff4053;--ink:#000;--ink2:#2f2f2f;--mut:#8f8f8f;--line:#ebebeb;--bg:#fff;--gray:#f2f1f0;--gray2:#f7f7f7;--r:12px}
 html,body{background:var(--bg)}
 body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,'Helvetica Neue',Arial,sans-serif;color:var(--ink);font-size:15px;line-height:1.4;min-height:100vh;overflow-x:hidden}
 button,input,select,textarea{font-family:inherit;color:inherit;font-size:inherit}
@@ -145,7 +145,7 @@ main{padding-bottom:calc(80px + env(safe-area-inset-bottom))}
 .owner .btn{flex:1;height:44px;font-size:14px;padding:0 10px}
 .blk{margin-top:22px}
 .istat{display:flex;align-items:center;gap:16px;color:var(--mut);font-size:14px;margin:4px 0 8px}.istat span{display:flex;align-items:center;gap:5px}.istat .i{width:18px;height:18px}.istat .r{margin-left:auto}
-.ms .i{width:14px;height:14px;vertical-align:-2px}.anl{padding:4px 2px 10px}.anl h2{margin:0 0 12px}.atot{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:14px}.atot div{background:rgba(127,127,127,.12);border-radius:14px;padding:10px;text-align:center}.atot b{display:block;font-size:20px}.atot small{color:var(--mut)}.arow{display:flex;gap:10px;align-items:center;padding:10px 0;border-top:1px solid rgba(127,127,127,.18)}.arow img{width:52px;height:52px;border-radius:10px;object-fit:cover}.arow .t{flex:1;min-width:0}.arow .n{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-weight:600}.arow .s{color:var(--mut);font-size:13px;display:flex;gap:10px}.spark{display:flex;align-items:flex-end;gap:2px;height:28px;margin-top:4px}.spark i{flex:1;background:#00aaff;border-radius:2px;min-height:2px;opacity:.8}
+.ms .i{width:14px;height:14px;vertical-align:-2px}.anl{padding:4px 2px 10px}.anl h2{margin:0 0 12px}.atot{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:14px}.atot div{background:rgba(127,127,127,.12);border-radius:14px;padding:10px;text-align:center}.atot b{display:block;font-size:20px}.atot small{color:var(--mut)}.arow{display:flex;gap:10px;align-items:center;padding:10px 0;border-top:1px solid rgba(127,127,127,.18)}.arow img{width:52px;height:52px;border-radius:10px;object-fit:cover}.arow .t{flex:1;min-width:0}.arow .n{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-weight:600}.arow .s{color:var(--mut);font-size:13px;display:flex;gap:10px}.spark{display:flex;align-items:flex-end;gap:2px;height:28px;margin-top:4px}.spark i{flex:1;background:#075b46;border-radius:2px;min-height:2px;opacity:.8}
 .blk h3{font-size:20px;font-weight:800;margin-bottom:10px;letter-spacing:-.3px}
 .addr{display:flex;gap:10px;align-items:flex-start;color:var(--ink2)}
 .addr svg{color:var(--mut);margin-top:1px}
@@ -401,7 +401,7 @@ button:focus:not(:focus-visible){outline:0}
 
 .chead{background:#fff;color:var(--ink);border-bottom:1px solid var(--gray2)}.chead .ibtn{color:var(--ink)}.chead .cn small{color:var(--mut)}
 .bub,.bub.me{border-radius:16px;box-shadow:none}.cday{box-shadow:none;background:#fff}.cin{background:#fff;border-top:1px solid var(--gray2)}.cin textarea{background:var(--gray);border-radius:16px}
-.cpin .pi,.crep .pi{border-left-color:var(--blue)}.fab{box-shadow:0 4px 12px #00aaff26}.color-select{width:100%;height:46px}
+.cpin .pi,.crep .pi{border-left-color:var(--blue)}.fab{box-shadow:0 4px 12px #075b4626}.color-select{width:100%;height:46px}
 .cat svg{opacity:1;transform:none;stroke-width:1.5;width:38px;height:38px;fill:#ffffff70}.c-national{background:#fce8ed}.c-national svg{color:#b24b6a}.c-headwear{background:#eee9ff}
 </style>
 <style>
@@ -446,6 +446,8 @@ button:active,.btn:active{opacity:.82}
 @media(max-width:340px){.search-run{font-size:16px;gap:18px}#tgAuth{padding-left:20px;padding-right:20px}#tgAuth .btn{font-size:15px}}
 </style>
 <link rel="stylesheet" href="messenger.css">
+<link rel="stylesheet" href="sugd.css">
+<link rel="icon" href="sugd-logo.svg" type="image/svg+xml">
 </head>
 <body>
 
@@ -453,13 +455,14 @@ button:active,.btn:active{opacity:.82}
   <!-- ПОИСК -->
   <section id="v-home" class="wrap">
     <div class="head" id="homeHead">
-      <div class="brand"><span class="lg" data-ic="bag"></span><span>Стекло<b>Маркет</b></span></div>
+      <div class="brand"><span class="lg"><img src="sugd-logo.svg" alt=""></span><span class="wordmark"><b>SUGD.TJ</b><small>ВЕЩИ И ЛЮДИ</small></span><button class="brand-account" aria-label="Мой аккаунт" onclick="if(GM.logged())go('profile');else GM.need('')"><span data-ic="user"></span></button></div>
       <div class="srow" style="position:relative">
-        <label class="sbox"><span data-ic="search"></span><input id="q" type="search" placeholder="Поиск по объявлениям" autocomplete="off" enterkeyhint="search"><button class="clr" id="qClr" hidden data-ic="x"></button></label>
+        <label class="sbox"><span data-ic="search"></span><input id="q" type="search" placeholder="Найти свою вещь" autocomplete="off" enterkeyhint="search"><button class="clr" id="qClr" hidden data-ic="x"></button></label>
         <button class="ibtn g" id="btnFilter" aria-label="Фильтры"><span data-ic="sliders"></span><span class="dot" id="fDot" hidden></span></button>
 
       </div>
     </div>
+    <div class="sugd-hero"><div class="eyebrow">СОГД · МАРКЕТПЛЕЙС ОДЕЖДЫ</div><h1>Хорошие вещи.<br>Свои люди.</h1><p>Находите своё.<br>Общайтесь с продавцами напрямую.</p><img src="sugd-logo.svg" alt=""><div class="hero-bottom"><span>Без посредников. По-соседски.</span><button onclick="go('sell')">Продать вещь ↗</button></div></div>
     <div class="cats" id="cats"></div><div id="subcats" class="subcats" hidden></div>
     <div class="chips" id="fchips" hidden></div>
     <div class="sect"><h2 id="gTitle">Рекомендации</h2><span id="gCount"></span></div>
@@ -491,6 +494,7 @@ button:active,.btn:active{opacity:.82}
   <section id="v-profile" class="wrap" hidden>
     <div class="tbar"><div class="tt" style="font-size:26px;font-weight:800;padding:4px 10px">Профиль</div></div>
     <div class="pcard"><div class="av" id="pAv"></div><div><h2 id="pName"></h2><p id="pSub"></p></div></div>
+    <div class="guest-note" id="guestNote" hidden>Все возможности доступны. Гостевой аккаунт восстанавливается только на этом устройстве, пока сохранены данные приложения.</div>
     <div class="stats">
       <div class="stat"><b id="stA">0</b><span>активных</span></div>
       <div class="stat"><b id="stZ">0</b><span>в архиве</span></div>
@@ -505,7 +509,7 @@ button:active,.btn:active{opacity:.82}
       <button class="mi2 danger" data-p="logout" id="authBtn" onclick="if(!GM.logged()){GM.need('');return}if(confirm('Выйти из аккаунта?'))GM.logout()"><span data-ic="logout"></span><span class="lt">Выйти из аккаунта</span></button>
       <button class="mi2 danger" data-p="wipe"><span data-ic="trash"></span><span class="lt">Удалить все данные</span></button>
     </div>
-    <div class="foot">СтеклоМаркет 9.17</div>
+    <div class="foot">SUGD.TJ 9.18 · Вещи и люди</div>
   </section>
 </main>
 
@@ -1214,8 +1218,9 @@ $('myAdd').onclick=function(){go('sell')};
 function renderProfile(){
   var a=listings.filter(function(l){return !l.archived}).length,z=listings.length-a;
   $('pAv').textContent=me.shopName?me.shopName.charAt(0).toUpperCase():'';if(!me.shopName)$('pAv').innerHTML=ic('user');var _av=localStorage.getItem('gm_av');if(_av)$('pAv').innerHTML='<img src="'+_av+'" style="width:100%;height:100%;border-radius:50%;object-fit:cover">';
-  $('pName').textContent=me.shopName||'Гость';
-  $('pSub').textContent=me.row?addrTxt(me):'Заполните данные продавца';
+  $('pName').textContent=me.shopName||(window.GM&&GM.user()&&GM.user().name)||'Гость';
+  if($('guestNote'))$('guestNote').hidden=!(window.GM&&GM.user()&&GM.user().guest);
+  $('pSub').textContent=me.row?addrTxt(me):(window.GM&&GM.user()&&GM.user().guest?'Гостевой аккаунт · все возможности':'Заполните данные продавца');
   $('stA').textContent=a;$('stZ').textContent=z;$('stF').textContent=favs.length;
   $('pmMy').textContent=a||'';$('pmFav').textContent=favs.length||'';
   $('pmSel').textContent=me.phone?me.phone:'Ряд, магазин, телефон';
@@ -1457,22 +1462,38 @@ function findServerOld(){ // адрес сервера: из GitHub (обнов�
  return fetch('https://api.github.com/repos/somontj5/server.js/contents/server-url.txt?t='+Date.now(),{cache:'no-store',headers:{accept:'application/vnd.github.raw'}}).then(function(r){return r.ok?r.text():''}).catch(function(){return''})
  .then(function(t){return /^https?:\/\//.test((t||'').trim())?t:fetch(URL_SRC+'?t='+Date.now(),{cache:'no-store'}).then(function(r){return r.ok?r.text():''})}).then(function(t){t=t.trim();if(/^https?:\/\//.test(t))st(SK,t);return GM.srv()},function(){return GM.srv()})}
 var why='';
-function hide(){authGeneration++;if(el)el.remove();el=null;clearInterval(timer);cur=null}
+function hide(){st('sugd_welcome_seen','1');authGeneration++;if(el)el.remove();el=null;clearInterval(timer);cur=null}
 function show(w){
  if(typeof w==='string')why=w;
  authGeneration++;if(el)el.remove();clearInterval(timer);cur=null;
  el=document.createElement('div');el.id='tgAuth';
- el.innerHTML='<div class="logo marketplace-logo" aria-hidden="true">'+ic('bag')+'</div><h2>СтеклоМаркет</h2>'+
- (why?'<p class="auth-reason">'+esc(why)+'</p>':'')+'<p>Выберите WhatsApp или Telegram, чтобы войти без пароля. Если аккаунта ещё нет, он создастся автоматически.</p>'+
- '<button class="btn auth-wa" id="waGo">'+WAI+'<span>Войти через WhatsApp</span></button>'+
- '<button class="btn" id="taGo">'+TGI+'<span>Войти через Telegram</span></button>'+
- '<div class="err" id="taErr"></div><button class="lnk" id="taLater" style="color:#555;font-size:15px">Не сейчас</button>';
+ el.setAttribute('role','dialog');el.setAttribute('aria-modal','true');el.setAttribute('aria-label','Вход в SUGD.TJ');
+ el.innerHTML='<div class="auth-shell"><div class="auth-topline">ВАШ ЛОКАЛЬНЫЙ МАРКЕТПЛЕЙС</div><div class="logo marketplace-logo" aria-hidden="true"><img src="sugd-logo.svg" alt=""></div><h2>Свои вещи.<br>Свои люди.</h2>'+
+ (why?'<p class="auth-reason">'+esc(why)+'</p>':'')+'<p class="auth-copy">Добро пожаловать в SUGD.TJ.<br>Покупайте, продавайте и общайтесь напрямую.</p>'+
+ '<button class="btn auth-guest" id="guestGo">'+ic('user')+'<span>Войти как гость<small>Все возможности. Без номера и пароля.</small></span></button>'+
+ '<div class="auth-divider">ИЛИ ВОЙДИТЕ ЧЕРЕЗ</div>'+
+ '<button class="btn auth-wa" id="waGo" aria-label="Войти через WhatsApp">'+WAI+'<span>WhatsApp</span></button>'+
+ '<button class="btn" id="taGo" aria-label="Войти через Telegram">'+TGI+'<span>Telegram</span></button>'+
+ '<p class="guest-explainer">У гостя есть объявления, сообщения и избранное. Доступ хранится на этом устройстве — не очищайте данные приложения.</p>'+
+ '<div class="err" id="taErr" role="status" aria-live="polite"></div><button class="lnk" id="taLater">Сначала посмотрю каталог</button></div>';
  document.body.appendChild(el);
- el.querySelector('#taGo').onclick=start;el.querySelector('#waGo').onclick=startWa;el.querySelector('#taLater').onclick=hide;
+ el.querySelector('#taGo').onclick=start;el.querySelector('#waGo').onclick=startWa;el.querySelector('#taLater').onclick=hide;el.querySelector('#guestGo').onclick=startGuest;
 }
 function err(t){var e=document.getElementById('taErr');if(e)e.textContent=t}
+function authBusy(on){if(el)el.querySelectorAll('#guestGo,#waGo,#taGo').forEach(function(b){b.disabled=on})}
+function startGuest(){
+ var generation=authGeneration,b=el.querySelector('#guestGo'),key=g('sugd_guest_key');
+ authBusy(true);err('');
+ try{if(!/^[a-f0-9]{64}$/.test(key)){var bytes=new Uint8Array(32);crypto.getRandomValues(bytes);key=Array.from(bytes,function(n){return ('0'+n.toString(16)).slice(-2)}).join('');st('sugd_guest_key',key);if(g('sugd_guest_key')!==key)throw Error('Разрешите сохранение данных приложения и повторите вход.')}}catch(e){authBusy(false);err(e.message||'Не удалось сохранить гостевой аккаунт.');return}
+ b.querySelector('span').textContent='Открываем ваш аккаунт…';
+ var controller=new AbortController(),timeout=setTimeout(function(){controller.abort()},15000);
+ findServer().then(function(srv){if(!srv)throw Error('Сервер недоступен. Повторите попытку.');return fetch(srv+'/auth/guest',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({deviceKey:key}),signal:controller.signal}).then(j)})
+ .then(function(r){if(generation!==authGeneration||!el)return;if(!r.token||!r.user)throw Error('Не удалось войти.');st(TK,r.token);st(UK,JSON.stringify(r.user));st('sugd_welcome_seen','1');hide();location.reload()})
+ .catch(function(e){if(generation!==authGeneration||!el)return;authBusy(false);b.querySelector('span').innerHTML='Войти как гость<small>Все возможности. Без номера и пароля.</small>';err(e.name==='AbortError'?'Сервер не ответил. Повторите вход.':e.message)})
+ .then(function(){clearTimeout(timeout)});
+}
 function startWa(){
- var generation=authGeneration,b=el.querySelector('#waGo');b.disabled=true;el.querySelector('#taGo').disabled=true;err('');
+ var generation=authGeneration,b=el.querySelector('#waGo');authBusy(true);err('');
  findServer().then(function(srv){
   if(!srv||!/^https:\/\//.test(srv))throw new Error('Нет безопасного подключения к серверу. Попробуйте позже.');
   return fetch(srv+'/auth/whatsapp/start',{method:'POST'}).then(j).then(function(d){d.server=srv;return d})
@@ -1484,15 +1505,15 @@ function startWa(){
   el.querySelector('#waOpen').onclick=function(){if(cur)location.href=cur.link};
   el.querySelector('#waCancel').onclick=function(){show()};
   clearInterval(timer);timer=setInterval(check,2500);location.href=d.link;
- }).catch(function(e){if(generation!==authGeneration||!el)return;b.disabled=false;el.querySelector('#taGo').disabled=false;err(/fetch|Network/i.test(e.message)?'Нет связи с сервером. Повторите попытку.':e.message)})
+ }).catch(function(e){if(generation!==authGeneration||!el)return;authBusy(false);err(/fetch|Network/i.test(e.message)?'Нет связи с сервером. Повторите попытку.':e.message)})
 }
 function start(){
- var generation=authGeneration,b=el.querySelector('#taGo');b.disabled=true;el.querySelector('#waGo').disabled=true;b.innerHTML='<div class="spin"></div><span>Подключение…</span>';err('');
+ var generation=authGeneration,b=el.querySelector('#taGo');authBusy(true);b.innerHTML='<div class="spin"></div><span>Подключение…</span>';err('');
  (st('gm_manual',''),findServer()).then(function(srv){
   if(!srv)throw new Error('Сервер недоступен. Попробуйте позже.');
   return fetch(srv+'/auth/start',{method:'POST'}).then(j)
  }).then(function(d){if(generation!==authGeneration||!el)return;cur=d;wait();openTg()}).catch(function(e){
-  if(generation!==authGeneration||!el)return;el.querySelector('#waGo').disabled=false;b.disabled=false;b.innerHTML=TGI+'<span>Войти через Telegram</span>';
+  if(generation!==authGeneration||!el)return;authBusy(false);b.innerHTML=TGI+'<span>Telegram</span>';
   err(/fetch|Network/i.test(e.message)?'Нет связи с сервером. Проверьте интернет.':e.message)})
 }
 function openTg(){location.href=cur.link}
@@ -1533,8 +1554,9 @@ document.addEventListener('click',function(e){var b=e.target.closest('[data-a="c
  var k=b.dataset.a==='chat'?'chat':(b.dataset.v||b.dataset.p||'sell');if(NEED[k]){e.preventDefault();e.stopImmediatePropagation();show(NEED[k])}},true);
 guard();
 findServer();
+if(!g(TK)&&!g('sugd_welcome_seen')&&!el)show('');
 })();
-(function(){var b=document.getElementById('authBtn');if(b&&!GM.logged()){b.classList.remove('danger');b.querySelector('.lt').textContent='Войти';var icon=b.querySelector('svg');if(icon)icon.outerHTML=ic('login');b.style.color='#00aaff'}})();
+(function(){var b=document.getElementById('authBtn');if(b&&!GM.logged()){b.classList.remove('danger');b.querySelector('.lt').textContent='Войти';var icon=b.querySelector('svg');if(icon)icon.outerHTML=ic('login');b.style.color='#075b46'}})();
 </script>
 <script>
 /* ===== Персональная лента с сервера ===== */
@@ -1701,7 +1723,7 @@ var _sh=window.share;
 window.share=function(l){
   var t=l.name+' — '+priceText(l)+'\n'+addrTxt(l)+' ('+l.shopName+')'+(l.phone&&(l.ways||[]).length?'\nТел.: '+l.phone:'');
   var sid=l.srv?l.id:(l.srvId||'');if(sid)t+='\n'+listingLink(l);
-  $('sheet').innerHTML='<div class="grab"></div>'+(sid?'<button class="act" data-m="chat">'+ic('msg')+'Отправить в чате GlassMarket</button>':'')
+  $('sheet').innerHTML='<div class="grab"></div>'+(sid?'<button class="act" data-m="chat">'+ic('msg')+'Отправить в чате SUGD.TJ</button>':'')
    +'<button class="act" data-m="wa">'+ic('share')+'WhatsApp</button>'
    +'<button class="act" data-m="other">'+ic('more')+'Другие приложения</button>';
   showModal();
