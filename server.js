@@ -95,7 +95,7 @@ async function sendCard(chat, id) {
   const l = db.listings[id];
   if (!l || l.archived) return say(chat, '😔 Объявление снято с публикации или удалено.');
   const s = db.users[l.sellerId] || {}, ph = l.contact && l.contact !== 'chat' ? (l.phone || s.phone || '') : '';
-  const cap = `${l.name}\n💰 ${l.price || 'цена не указана'}\n📍 ${l.bazaar ? 'Базар ' + l.bazaar + ', ' : ''}Ряд ${l.row}, магазин №${l.shopNum} (${l.shopName})` + (ph ? `\n📞 ${ph}` : '') + (l.desc ? `\n\n${l.desc.slice(0, 600)}` : '') + '\n\nНаписать продавцу можно в приложении SUGD.TJ.';
+  const cap = `${l.name}\n💰 ${l.price || 'цена не указана'}\n📍 ${l.bazaar ? 'Базар ' + l.bazaar + ', ' : ''}${l.sector ? 'сектор ' + l.sector + ', ' : ''}Ряд ${l.row}, магазин №${l.shopNum} (${l.shopName})` + (ph ? `\n📞 ${ph}` : '') + (l.desc ? `\n\n${l.desc.slice(0, 600)}` : '') + '\n\nНаписать продавцу можно в приложении SUGD.TJ.';
   const p = l.photos[0];
   try {
     if (p && p.startsWith('http')) { const r = await tg('sendPhoto', { chat_id: chat, photo: p, caption: cap.slice(0, 1024) }); if (r.ok) return; }
@@ -273,7 +273,7 @@ if (process.env.GITHUB_ACTIONS === 'true') {
 
 
 /* ================= Представления ================= */
-const pubUser = u => u && ({ id:u.id, name:u.name, shopName:u.shopName, bazaar:u.bazaar||'', row:u.row, shopNum:u.shopNum, about:u.about||'', rating: rating(u.id), ig: u.ig || '', igInfo: u.ig ? igPub(u.ig) : null, avatar: u.avatar ? '/u/' + u.id + '/avatar?v=' + (u.avTs || 0) : '' });
+const pubUser = u => u && ({ id:u.id, name:u.name, shopName:u.shopName, bazaar:u.bazaar||'', sector:u.sector||'', row:u.row, shopNum:u.shopNum, about:u.about||'', rating: rating(u.id), ig: u.ig || '', igInfo: u.ig ? igPub(u.ig) : null, avatar: u.avatar ? '/u/' + u.id + '/avatar?v=' + (u.avTs || 0) : '' });
 // ===== Instagram: плашка аккаунта продавца (публичные данные профиля, кэш 12 ч) =====
 const IGC = {}; // username -> { t, d:{ name, pic, followers, following, posts, bio, verified, priv } | null }
 function igNorm(v) { let s = String(v == null ? '' : v).trim(); const m = s.match(/instagram\.com\/([A-Za-z0-9._]+)/i); if (m) s = m[1]; s = s.replace(/^@+/, '').toLowerCase();
@@ -384,6 +384,8 @@ function cleanListing(b, l) {
   if (b.cat !== undefined) l.cat = CATS.includes(b.cat) ? b.cat : 'other';
   ['name','price','shopName'].forEach(k => { if (b[k] !== undefined) l[k] = str(b[k], 80); });
   if (b.bazaar !== undefined) l.bazaar = bazOf(b.bazaar);
+  if (b.sector !== undefined) { const v=Validation.clean(b.sector).toUpperCase(); if ((v || ['Саховат','Сомон'].includes(l.bazaar)) && Validation.sectorError(v)) need(400,Validation.sectorError(v)); l.sector=['Саховат','Сомон'].includes(l.bazaar)?v:''; }
+  if (!['Саховат','Сомон'].includes(l.bazaar)) l.sector='';
   if (b.row !== undefined) l.row = onlyDigits(b.row).slice(0, 4);
   if (b.shopNum !== undefined) l.shopNum = onlyDigits(b.shopNum).replace(/^0+/, '').slice(0, 4); // контейнер 1..9999
   if (b.phone !== undefined) l.phone = tjPhone(b.phone); // Invalid numbers must not silently disappear.
@@ -483,8 +485,11 @@ route('POST', '/auth/logout', 1, (q, b, u, req) => { delete db.sessions[req.toke
 route('GET', '/me', 1, (q, b, u) => meUser(u));
 route('PUT', '/me', 1, async (q, b, u) => { for (const [key,kind] of [['name','person'],['shopName','shop']]) { if (b[key] !== undefined && (key === 'name' || b[key])) { const error = Validation.error(kind,b[key]); if (error) need(400,error); } } if (b.ig) { const g = igNorm(b.ig); if (g && g !== u.ig) { if (!IGC[g] || IGC[g].ex == null) await igLoad(g); if (IGC[g] && IGC[g].ex === false) need(400, 'Instagram-аккаунт @' + g + ' не найден'); } }
   const profilePhone = b.phone !== undefined ? tjPhone(b.phone) : u.phone;
+  const profileBazaar=b.bazaar!==undefined?bazOf(b.bazaar):u.bazaar, sector=b.sector!==undefined?Validation.clean(b.sector).toUpperCase():u.sector||'';
+  if (b.sector!==undefined && (sector || ['Саховат','Сомон'].includes(profileBazaar)) && Validation.sectorError(sector)) need(400,Validation.sectorError(sector));
   ['name','shopName'].forEach(k => { if (b[k] !== undefined) u[k] = str(b[k], 60); });
   if (b.bazaar !== undefined) u.bazaar = bazOf(b.bazaar);
+  u.sector=['Саховат','Сомон'].includes(profileBazaar)?sector:'';
   if (b.row !== undefined) u.row = onlyDigits(b.row).slice(0, 4); if (b.shopNum !== undefined) { const sn = onlyDigits(b.shopNum).replace(/^0+/, '').slice(0, 4); checkShop(sn, u.id, u.shopNum); u.shopNum = sn; } if (b.phone !== undefined) u.phone = profilePhone; if (b.about !== undefined) u.about = str(b.about, 200); if (b.ig !== undefined) { u.ig = igNorm(b.ig); if (u.ig) igLoad(u.ig); } if (b.avatar !== undefined) { if (!b.avatar) { delete u.avatar; } else { if (!/^data:image\/(jpeg|png|webp);base64,/.test(b.avatar) || b.avatar.length > 400e3) need(400, 'Фото слишком большое'); u.avatar = b.avatar; u.avTs = now(); } } touch(); return meUser(u); });
 route('GET', '/ig/:name', 0, async (q, b, u, r, p) => { const un = igNorm(p.name); if (!un) need(400, 'Пустой ник'); if (!IGC[un] || !IGC[un].d) await igLoad(un); return { ig: un, exists: IGC[un] ? (IGC[un].ex === undefined ? null : IGC[un].ex) : null, igInfo: igPub(un) }; });
 route('GET', '/users/:id', 0, (q, b, u, r, p) => pubUser(db.users[p.id]) || need(404, 'Нет пользователя'));
@@ -632,10 +637,10 @@ function checkShop(num, uid, cur) {
   if (shopOwner(num, uid)) need(409, `Контейнер №${num} уже занят другим продавцом`);
 }
 function fillAddr(b, u) { // адрес продавца, указанный один раз, подставляется автоматически
-  for (const k of ['bazaar', 'row', 'shopNum', 'shopName']) if (!String(b[k] == null ? '' : b[k]).trim() && u[k]) b[k] = u[k];
+  for (const k of ['bazaar', 'sector', 'row', 'shopNum', 'shopName']) if (!String(b[k] == null ? '' : b[k]).trim() && u[k]) b[k] = u[k];
   if (!String(b.phone || '').trim() && u.phone) b.phone = u.phone;
 }
-function saveAddr(u, l) { u.shopName = l.shopName; u.bazaar = l.bazaar || ''; u.row = l.row; u.shopNum = l.shopNum; if (l.phone && !u.phone) u.phone = l.phone; }
+function saveAddr(u, l) { u.shopName = l.shopName; u.bazaar = l.bazaar || ''; u.sector = l.sector || ''; u.row = l.row; u.shopNum = l.shopNum; if (l.phone && !u.phone) u.phone = l.phone; }
 route('POST', '/listings', 1, (q, b, u) => {
   fillAddr(b, u);
   const l = cleanListing(b, { id: rid(5), sellerId: u.id, createdAt: now(), views:0, contact:'chat', photos:[] });
@@ -816,7 +821,7 @@ route('DELETE', '/searches/:id', 1, (q, b, u, r, p) => { const s = db.searches[p
 route('GET', '/listings/:id/share', 0, (q, b, u, r, p) => {
   const l = db.listings[p.id] || need(404, 'Объявление не найдено');
   const url = shareUrl(l.id);
-  return { url, text: `${l.name} — ${l.price || 'цена не указана'}\n${l.bazaar ? 'Базар ' + l.bazaar + ', ' : ''}Ряд ${l.row}, магазин №${l.shopNum} (${l.shopName})` + (url ? `\n${url}` : '') };
+  return { url, text: `${l.name} — ${l.price || 'цена не указана'}\n${l.bazaar ? 'Базар ' + l.bazaar + ', ' : ''}${l.sector ? 'сектор ' + l.sector + ', ' : ''}Ряд ${l.row}, магазин №${l.shopNum} (${l.shopName})` + (url ? `\n${url}` : '') };
 });
 
 // --- Рекомендации ---
@@ -856,10 +861,10 @@ http.createServer((req, res) => {
   if (lm) {
     const l = db.listings[lm[1]], esc = v => String(v || '').replace(/[&<>"]/g, c => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;' })[c]);
     const appLink = 'glassmarket://listing/' + encodeURIComponent(lm[1]);
-    const download = 'https://github.com/somontj5/server.js/raw/main/apk/SUGD.TJ-9.18.apk';
+    const download = 'https://github.com/somontj5/server.js/raw/main/apk/SUGD.TJ-9.19.apk';
     const intent = 'intent://listing/' + encodeURIComponent(lm[1]) + '#Intent;scheme=glassmarket;package=ru.glassmarket.app;S.browser_fallback_url=' + encodeURIComponent(download) + ';end';
     const html = l && !l.archived ? `<!doctype html><meta charset=utf-8><meta name=viewport content="width=device-width,initial-scale=1"><title>${esc(l.name)}</title><meta property="og:title" content="${esc(l.name + ' — ' + (l.price||''))}"><meta property="og:description" content="${esc('Ряд ' + l.row + ', магазин №' + l.shopNum)}">
-<body style="font-family:sans-serif;max-width:520px;margin:auto;padding:12px">${l.photos[0] ? `<img src="/l/${esc(l.id)}/photo" style="width:100%;border-radius:12px">` : ''}<h2>${esc(l.name)}</h2><h3>${esc(l.price || 'цена не указана')}</h3><p>📍 ${l.bazaar ? 'Базар ' + esc(l.bazaar) + ', ' : ''}Ряд ${esc(l.row)}, магазин №${esc(l.shopNum)} (${esc(l.shopName)})</p>${l.material ? `<p>🧵 Материал: ${esc(l.material)}</p>` : ''}<p style="white-space:pre-wrap">${esc(l.desc)}</p><a id="openApp" href="${esc(intent)}" style="display:block;text-align:center;background:#075b46;color:#fff;padding:14px;border-radius:12px;text-decoration:none">Открыть в SUGD.TJ</a><p style="text-align:center"><a href="${download}">Скачать SUGD.TJ 9.18</a></p><p style="color:#777;font-size:13px">Если приложение не открылось автоматически, нажмите кнопку выше.</p><script>if(/Android/i.test(navigator.userAgent))location.href=${JSON.stringify(appLink)};</script></body>`
+<body style="font-family:sans-serif;max-width:520px;margin:auto;padding:12px">${l.photos[0] ? `<img src="/l/${esc(l.id)}/photo" style="width:100%;border-radius:12px">` : ''}<h2>${esc(l.name)}</h2><h3>${esc(l.price || 'цена не указана')}</h3><p>📍 ${l.bazaar ? 'Базар ' + esc(l.bazaar) + ', ' : ''}${l.sector ? 'сектор ' + esc(l.sector) + ', ' : ''}Ряд ${esc(l.row)}, магазин №${esc(l.shopNum)} (${esc(l.shopName)})</p>${l.material ? `<p>🧵 Материал: ${esc(l.material)}</p>` : ''}<p style="white-space:pre-wrap">${esc(l.desc)}</p><a id="openApp" href="${esc(intent)}" style="display:block;text-align:center;background:#075b46;color:#fff;padding:14px;border-radius:12px;text-decoration:none">Открыть в SUGD.TJ</a><p style="text-align:center"><a href="${download}">Скачать SUGD.TJ 9.19</a></p><p style="color:#777;font-size:13px">Если приложение не открылось автоматически, нажмите кнопку выше.</p><script>if(/Android/i.test(navigator.userAgent))location.href=${JSON.stringify(appLink)};</script></body>`
       : '<!doctype html><meta charset=utf-8><h3 style="font-family:sans-serif">Объявление снято с публикации</h3>';
     res.writeHead(l && !l.archived ? 200 : 404, { 'content-type': 'text/html; charset=utf-8', 'cache-control':'no-store', 'x-content-type-options':'nosniff' }); return res.end(html);
   }

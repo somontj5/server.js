@@ -21,5 +21,6 @@ function error(kind,value){
  if(name&&(v.split(/\s+/).length>5||/[-'ʼʻ‘’]{2,}/.test(v)))return 'Укажите настоящее имя, без лишних слов и знаков';
  return '';
 }
-return {clean:clean,error:error};
+function sectorError(v){return new RegExp('^['+letters+']$').test(clean(v))?'':'Буква сектора: введите одну букву'}
+return {clean:clean,error:error,sectorError:sectorError};
 });

@@ -14,7 +14,7 @@ test('Client scripts parse, size-recognition action removed, native links compil
  for(const x of html.matchAll(/<script(?: [^>]*)?>([\s\S]*?)<\/script>/g))new vm.Script(x[1]);
  assert.ok(html.includes('id="f-desc"'));assert.ok(html.includes('minlength="20"'));assert.ok(html.includes('select class="inp color-select"'));
  assert.ok(!fs.readFileSync('android-src/assets/www/sizes-ui.js','utf8').includes('Распознать'));
- const manifest=fs.readFileSync('android-src/AndroidManifest.xml','utf8');assert.ok(manifest.includes('android:scheme="glassmarket"'));assert.ok(manifest.includes('versionName="9.18"'));
+ const manifest=fs.readFileSync('android-src/AndroidManifest.xml','utf8');assert.ok(manifest.includes('android:scheme="glassmarket"'));assert.ok(manifest.includes('versionName="9.19"'));
 });
 test('Cold and warm recommendations avoid seller/category monopolies when alternatives exist',()=>{
  const code=fs.readFileSync('server.js','utf8'),a=code.indexOf('function recommend('),b=code.indexOf('// Gemini вызывается',a);
@@ -44,7 +44,7 @@ test('Live API validates create/update/profile atomically, keeps long descriptio
   assert.equal((await api('/me','PUT',{name:'Ҷамшед Oʻtkir'})).status,200);
   await api('/me/interests','DELETE',undefined,'test-buyer');await api('/listings/'+id,'GET',undefined,'test-buyer');const before=(await api('/me/interests','GET',undefined,'test-buyer')).data;
   await api('/listings/'+id,'GET',undefined,'test-buyer');const after=(await api('/me/interests','GET',undefined,'test-buyer')).data;assert.deepEqual(after,before);
-  const page=await fetch(s.base+'/l/'+id),html=await page.text();assert.equal(page.status,200);assert.ok(html.includes('glassmarket://listing/'+id));assert.ok(html.includes('package=ru.glassmarket.app'));assert.ok(html.includes('Скачать SUGD.TJ 9.18'));
+  const page=await fetch(s.base+'/l/'+id),html=await page.text();assert.equal(page.status,200);assert.ok(html.includes('glassmarket://listing/'+id));assert.ok(html.includes('package=ru.glassmarket.app'));assert.ok(html.includes('Скачать SUGD.TJ 9.19'));
   await api('/listings/'+id+'/archive','POST');assert.equal((await fetch(s.base+'/l/'+id)).status,404);
  }finally{await s.stop()}
 });
@@ -112,5 +112,24 @@ test('SUGD guest: private resumable identity, full marketplace access, no privil
   assert.equal((await api('/me','PUT',{name:'Фарид'},token)).status,200);
   await api('/auth/logout','POST',{},token);assert.equal((await api('/me','GET',null,token)).status,401);
   const resume=(await api('/auth/guest','POST',{deviceKey:key})).data;assert.equal(resume.user.id,uid);assert.equal(resume.user.name,'Фарид');assert.notEqual(resume.token,token);
+ }finally{await s.stop()}
+});
+
+test('9.19 sector is exactly one supported letter, persists and rejects invalid updates atomically',async()=>{
+ const s=await start(19900+Math.floor(Math.random()*50));
+ async function api(path,method='GET',body){const r=await fetch(s.base+path,{method,headers:{authorization:'Bearer test-seller','content-type':'application/json'},body:body?JSON.stringify(body):undefined});return {status:r.status,data:await r.json()}}
+ try{
+  const V=require('./android-src/assets/www/validation');
+  for(const x of ['А','Б','A','Ғ','Ў'])assert.equal(V.sectorError(x),'');
+  for(const x of ['','12','AB','АБ','3','🎉'])assert.ok(V.sectorError(x));
+  const draft={name:'Хлопковая футболка',desc:'Мягкая футболка из хлопка для повседневной носки.',cat:'clothes',sub:'tops',section:'tops-tees',shopName:'Тест',row:'1',shopNum:'1',photos:['data:image/png;base64,AA=='],bazaar:'Саховат',sector:'б'};
+  const created=await api('/listings','POST',draft);assert.equal(created.status,200,JSON.stringify(created.data));assert.equal(created.data.sector,'Б');
+  const id=created.data.id;
+  const invalid=await api('/listings/'+id,'PUT',{name:'Нельзя сохранить',sector:'АБ'});assert.equal(invalid.status,400);assert.equal((await api('/listings/'+id)).data.name,draft.name);
+  assert.equal((await api('/listings/'+id,'PUT',{bazaar:'Сомон',sector:'A'})).data.sector,'A');
+  assert.equal((await api('/me')).data.sector,'A');
+  assert.equal((await api('/me','PUT',{sector:'AA',name:'Новое имя'})).status,400);assert.notEqual((await api('/me')).data.name,'Новое имя');
+  assert.equal((await api('/me','PUT',{bazaar:'Сомон',sector:'қ'})).data.sector,'Қ');
+  assert.equal((await api('/listings/'+id,'PUT',{bazaar:'Атуш',sector:''})).data.sector,'');
  }finally{await s.stop()}
 });
