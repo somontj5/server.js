@@ -19,7 +19,7 @@ const assert = require('assert/strict');
         return route.fulfill({status:response.status,contentType:'application/json',body:await response.text()});
       }
       if (url.hostname === 'gm.test') {
-        const file = ['ui-controls.js','theme.js','validation.js','categories.js','sizes.js','sizes-ui.js','chat-media.js','messenger.js','messenger.css','sugd.css','sugd-logo.svg'].find(x=>url.pathname==='/'+x)||'index.html';
+        const file = ['pricing.js','ui-controls.js','theme.js','validation.js','categories.js','sizes.js','sizes-ui.js','chat-media.js','messenger.js','messenger.css','sugd.css','sugd-logo.svg'].find(x=>url.pathname==='/'+x)||'index.html';
         return route.fulfill({contentType:file.endsWith('.svg')?'image/svg+xml':file.endsWith('.js')?'application/javascript':file.endsWith('.css')?'text/css':'text/html',body:fs.readFileSync('android-src/assets/www/'+file)});
       }
       if (/github/.test(url.hostname)) return route.fulfill({contentType:'text/plain',body:'https://gm.test/api'});

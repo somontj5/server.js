@@ -4,10 +4,11 @@
 if (!process.env.GM_CHILD) {
   const { spawn } = require('child_process'); let child, stop = false;
   const run = () => { child = spawn(process.execPath, [__filename], { stdio:'inherit', env: Object.assign({}, process.env, { GM_CHILD:'1' }) });
-    child.on('exit', c => { if (stop) return process.exit(0); console.error('Сервер упал (код ' + c + '), перезапуск через 2 с'); setTimeout(run, 2000); }); };
-  ['SIGINT','SIGTERM'].forEach(s => process.on(s, () => { stop = true; if (child) child.kill(s); setTimeout(() => process.exit(0), 5000); }));
+    child.on('exit', c => { if (stop || c === 78) return process.exit(c || 0); console.error('Сервер упал (код ' + c + '), перезапуск через 2 с'); setTimeout(run, 2000); }); };
+  ['SIGINT','SIGTERM'].forEach(s => process.on(s, () => { stop = true; if (child) child.kill(s); setTimeout(() => process.exit(1), 85000).unref(); }));
   run(); return;
 }
+(async function main(){
 const http = require('http'), fs = require('fs'), crypto = require('crypto');
 const PORT = +process.env.PORT || 8080;
 const TOKEN = process.env.BOT_TOKEN || '';
@@ -19,12 +20,20 @@ const Validation = require('./android-src/assets/www/validation.js');
 const CATS = ['transport','realty','electronics','clothes','home','animals','food','other'];
 
 let db = { users:{}, sessions:{}, codes:{}, listings:{}, threads:{}, reviews:[], searches:{} };
-try { Object.assign(db, JSON.parse(fs.readFileSync(DB_FILE, 'utf8'))); console.log('БД загружена'); } catch {}
-let dirty = false;
-const touch = () => { dirty = true; };
+let legacy=null;
+try { legacy=JSON.parse(fs.readFileSync(DB_FILE, 'utf8'));Object.assign(db,legacy);console.log('Локальный снимок загружен'); } catch(e) { if(e.code!=='ENOENT')throw Error('Database file is invalid; refusing empty startup'); }
+const {SupabaseStore}=require('./supabase-store');
+const cloud=new SupabaseStore(process.env.GM_STORAGE_BACKEND==='file'?{}:process.env);
+if((process.env.GM_REQUIRE_SUPABASE==='true'||process.env.GM_STORAGE_BACKEND==='supabase')&&!cloud.cfg)throw Error('Supabase configuration required');
+if(cloud.cfg)db=await cloud.open(legacy);
+else if(JSON.stringify(db).includes('gm-media:'))throw Error('Cloud recovery snapshot requires Supabase; use the pre-migration backup for file mode');
+let dirty = false, generation=0,cloudGeneration=-1;
+const touch = () => { dirty = true;generation++; };
+async function durable(){if(!cloud.cfg)return;const v=generation;if(v===cloudGeneration&&cloud.healthy)return;await cloud.save(db);cloudGeneration=v;}
 function flush() { if (!dirty) return; fs.mkdirSync(require('path').dirname(DB_FILE), { recursive:true }); const tmp = DB_FILE + '.tmp'; fs.writeFileSync(tmp, JSON.stringify(db), { mode:0o600 }); fs.renameSync(tmp, DB_FILE); dirty = false; }
-setInterval(flush, 3000);
-['SIGINT','SIGTERM'].forEach(s => process.on(s, () => { dirty = true; flush(); process.exit(0); }));
+setInterval(()=>{flush();durable().catch(()=>console.error('Supabase save pending; responses will not acknowledge unsaved writes'));},3000);
+let stopping=false;
+['SIGINT','SIGTERM'].forEach(s => process.on(s, async () => {if(stopping)return;stopping=true;dirty=true;flush();try{await durable();if(cloud.cfg)await cloud.close();process.exit(0)}catch{console.error('Cloud save failed; local recovery snapshot retained');process.exit(1)}}));
 
 const rid = (n=6) => crypto.randomBytes(n).toString('hex');
 const now = () => Date.now();
@@ -350,7 +359,8 @@ function listingOut(l, full) {
   for (const k of ['tags','atags','tt','tu','nu','mtags','hideTags','ai','ai2','aiAt','aiSub','aiGender','aiSeason','aiVersion','aiModel','unknownCounted','st']) delete o[k];
   o.priceNum = Pricing.original(l); o.discountPrice = Pricing.sale(l); o.effectivePrice = effectivePrice(l); o.price = Pricing.text(l);
   o.favCount = l.favCount || 0; o.views = l.views || 0;
-  if (!full) { o.photo = l.photos[0] || null; o.photoCount = l.photos.length; delete o.photos; delete o.desc; }
+  if(cloud.cfg)o.photos=l.photos.map((_,i)=>cloud.publicPhoto(l,i,PUB||''));
+  if (!full) { o.photo = cloud.cfg ? cloud.publicPhoto(l,0,PUB||'') || null : l.photos[0] || null; o.photoCount = l.photos.length; delete o.photos; delete o.desc; }
   o.ways = contactWays(l);
   o.contact = o.ways.includes('phone') && o.ways.includes('wa') ? 'both' : (o.ways[0] || 'chat');
   o.phone = o.ways.length ? (l.phone || s.phone || '') : '';
@@ -421,7 +431,14 @@ function cleanListing(b, l) {
   if (b.material !== undefined) l.material = Catalog.materialList(str(b.material, 1000)).join(', '); // материал товара (понятное название: «Хлопок», «Натуральная кожа» и т.п.)
   if (Array.isArray(b.ways)) l.ways = [...new Set(b.ways.filter(x => ['phone','wa'].includes(x)))];
   if (b.contact !== undefined) l.contact = ['chat','both','phone','wa'].includes(b.contact) ? b.contact : 'chat';
-  if (Array.isArray(b.photos)) l.photos = b.photos.filter(p => typeof p === 'string' && (p.startsWith('data:image/') || p.startsWith('http'))).slice(0, 16);
+  if (Array.isArray(b.photos)) {
+    const original=(l.photos||[]).slice();
+    l.photos=b.photos.filter(p=>typeof p==='string'&&(p.startsWith('data:image/')||p.startsWith('http'))).slice(0,16).map(p=>{
+      if(cloud.cfg&&PUB){const index=original.findIndex((v,i)=>p===cloud.publicPhoto({id:l.id,photos:original},i,PUB));if(index>=0)return original[index];
+        if(p.startsWith(PUB+'/l/'+encodeURIComponent(l.id)+'/photos/'))need(400,'Фото больше недоступно. Добавьте его заново');}
+      return p;
+    });
+  }
   if (b.tags !== undefined) l.mtags = str(b.tags, 300);   // необязательные теги продавца
   if (b.hideTags !== undefined) l.hideTags = Array.isArray(b.hideTags) ? b.hideTags.map(x => str(x, 40)).filter(Boolean).slice(0, 20) : [];
   if (l.cat === 'clothes') Object.assign(l, Catalog.normalize(l));
@@ -449,11 +466,11 @@ class E extends Error { constructor(c, m) { super(m); this.code = c; } }
 const need = (c, m) => { throw new E(c, m); };
 
 route('GET', '/', 0, () => ({ ok:true, app:'SUGD.TJ', bot: BOT ? '@' + BOT : null, time: now() }));
-route('GET', '/health', 0, () => ({ ok:true }));
+route('GET', '/health', 0, () => {if(cloud.cfg&&!cloud.healthy)need(503,'Хранилище временно недоступно');return {ok:true,storage:cloud.cfg?'supabase':'file'};});
 route('GET', '/categories', 0, () => ({ items: Catalog.items }));
 
 // Separate namespace: legacy Telegram sessions/users remain unchanged.
-const waAuth = require('./whatsapp-auth')({ db, persist: () => { touch(); flush(); }, userOut: meUser });
+const waAuth = require('./whatsapp-auth')({ db, persist: () => { touch(); flush(); }, commit:durable, userOut: meUser });
 route('POST', '/auth/whatsapp/start', 0, (q,b,u,req) => waAuth.start(req));
 route('POST', '/auth/whatsapp/check', 0, (q,b,u,req) => waAuth.check(req,b));
 
@@ -743,7 +760,7 @@ route('POST', '/threads/:id/messages', 1, (q, b, u, r, p) => {
   if (clientId) {
     const previous = t.messages.find(x => x.from === u.id && x.clientId === clientId);
     if (previous) {
-      if (!previous.del && (previous.text !== text || (previous.img || '') !== img || (previous.voice || '') !== voice)) need(409, 'Идентификатор уже использован');
+      if (!previous.del && (previous.text !== text || !cloud.equivalent(previous.img || '',img) || !cloud.equivalent(previous.voice || '',voice))) need(409, 'Идентификатор уже использован');
       return msgOut(previous, u.id);
     }
   }
@@ -874,7 +891,8 @@ function send(res, code, obj) {
 }
 process.on('uncaughtException', e => console.error('uncaught:', e));
 process.on('unhandledRejection', e => console.error('unhandled:', e));
-http.createServer((req, res) => {
+http.createServer(async (req, res) => {
+  if(stopping)return send(res,503,{error:'Сервер перезапускается'});
   if (req.method === 'OPTIONS') return send(res, 204, {});
   const url = new URL(req.url, 'http://x'), q = Object.fromEntries(url.searchParams);
   if (url.pathname === '/webhooks/whatsapp') return waAuth.webhook(req, res, url);
@@ -882,35 +900,35 @@ http.createServer((req, res) => {
   if (lm) {
     const l = db.listings[lm[1]], esc = v => String(v || '').replace(/[&<>"]/g, c => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;' })[c]);
     const appLink = 'glassmarket://listing/' + encodeURIComponent(lm[1]);
-    const download = 'https://github.com/somontj5/server.js/raw/main/apk/SUGD.TJ-9.21.apk';
+    const download = 'https://github.com/somontj5/server.js/raw/main/apk/SUGD.TJ-9.22.apk';
     const intent = 'intent://listing/' + encodeURIComponent(lm[1]) + '#Intent;scheme=glassmarket;package=ru.glassmarket.app;S.browser_fallback_url=' + encodeURIComponent(download) + ';end';
     const html = l && !l.archived ? `<!doctype html><meta charset=utf-8><meta name=viewport content="width=device-width,initial-scale=1"><title>${esc(l.name)}</title><meta property="og:title" content="${esc(l.name + ' — ' + Pricing.text(l))}"><meta property="og:description" content="${esc('Ряд ' + l.row + ', магазин №' + l.shopNum)}">
-<body style="font-family:sans-serif;max-width:520px;margin:auto;padding:12px">${l.photos[0] ? `<img src="/l/${esc(l.id)}/photo" style="width:100%;border-radius:12px">` : ''}<h2>${esc(l.name)}</h2><h3>${esc(Pricing.text(l))}</h3><p>${l.bazaar ? 'Базар ' + esc(l.bazaar) + ', ' : ''}${l.sector ? 'сектор ' + esc(l.sector) + ', ' : ''}Ряд ${esc(l.row)}, магазин №${esc(l.shopNum)} (${esc(l.shopName)})</p>${l.material ? `<p>Материал: ${esc(l.material)}</p>` : ''}<p style="white-space:pre-wrap">${esc(l.desc)}</p><a id="openApp" href="${esc(intent)}" style="display:block;text-align:center;background:#075b46;color:#fff;padding:14px;border-radius:12px;text-decoration:none">Открыть в SUGD.TJ</a><p style="text-align:center"><a href="${download}">Скачать SUGD.TJ 9.21</a></p><p style="color:#777;font-size:13px">Если приложение не открылось автоматически, нажмите кнопку выше.</p><script>if(/Android/i.test(navigator.userAgent))location.href=${JSON.stringify(appLink)};</script></body>`
+<body style="font-family:sans-serif;max-width:520px;margin:auto;padding:12px">${l.photos[0] ? `<img src="/l/${esc(l.id)}/photo" style="width:100%;border-radius:12px">` : ''}<h2>${esc(l.name)}</h2><h3>${esc(Pricing.text(l))}</h3><p>${l.bazaar ? 'Базар ' + esc(l.bazaar) + ', ' : ''}${l.sector ? 'сектор ' + esc(l.sector) + ', ' : ''}Ряд ${esc(l.row)}, магазин №${esc(l.shopNum)} (${esc(l.shopName)})</p>${l.material ? `<p>Материал: ${esc(l.material)}</p>` : ''}<p style="white-space:pre-wrap">${esc(l.desc)}</p><a id="openApp" href="${esc(intent)}" style="display:block;text-align:center;background:#075b46;color:#fff;padding:14px;border-radius:12px;text-decoration:none">Открыть в SUGD.TJ</a><p style="text-align:center"><a href="${download}">Скачать SUGD.TJ 9.22</a></p><p style="color:#777;font-size:13px">Если приложение не открылось автоматически, нажмите кнопку выше.</p><script>if(/Android/i.test(navigator.userAgent))location.href=${JSON.stringify(appLink)};</script></body>`
       : '<!doctype html><meta charset=utf-8><h3 style="font-family:sans-serif">Объявление снято с публикации</h3>';
     res.writeHead(l && !l.archived ? 200 : 404, { 'content-type': 'text/html; charset=utf-8', 'cache-control':'no-store', 'x-content-type-options':'nosniff' }); return res.end(html);
   }
-  const pm = req.method === 'GET' && url.pathname.match(/^\/l\/([\w-]+)\/photo$/);
-  if (pm) { const l = db.listings[pm[1]], ph = l && !l.archived && l.photos[0], m = ph && ph.match(/^data:(image\/\w+);base64,(.+)$/);
+  const pm = req.method === 'GET' && url.pathname.match(/^\/l\/([\w-]+)\/(?:photo|photos\/(\d+))$/);
+  if (pm) { const l = db.listings[pm[1]], raw = l && !l.archived && l.photos[Number(pm[2]||0)], ph = cloud.cfg ? await cloud.data(raw).catch(()=>null) : raw, m = ph && ph.match(/^data:(image\/\w+);base64,(.+)$/);
     if (m) { res.writeHead(200, { 'content-type': m[1], 'cache-control': 'max-age=86400' }); return res.end(Buffer.from(m[2], 'base64')); }
     if (ph) { res.writeHead(302, { location: ph }); return res.end(); } res.writeHead(404); return res.end(); }
   const im = req.method === 'GET' && url.pathname.match(/^\/ig\/([a-z0-9._]{1,30})\/pic$/);
   if (im) { const d = IGC[im[1]] && IGC[im[1]].d; if (d && d.picBuf) { res.writeHead(200, { 'content-type': d.picType, 'cache-control': 'max-age=43200', 'access-control-allow-origin': '*' }); return res.end(d.picBuf); } res.writeHead(404); return res.end(); }
   const am = req.method === 'GET' && url.pathname.match(/^\/u\/([\w-]+)\/avatar$/);
-  if (am) { const au = db.users[am[1]], m = au && au.avatar && au.avatar.match(/^data:(image\/\w+);base64,(.+)$/);
+  if (am) { const au = db.users[am[1]], avatar = au && au.avatar, image = cloud.cfg ? await cloud.data(avatar).catch(()=>null) : avatar, m = image && image.match(/^data:(image\/\w+);base64,(.+)$/);
     if (m) { res.writeHead(200, { 'content-type': m[1], 'cache-control': 'max-age=86400', 'access-control-allow-origin': '*' }); return res.end(Buffer.from(m[2], 'base64')); } res.writeHead(404); return res.end(); }
   const rt = routes.find(r => r.m === req.method && r.re.test(url.pathname));
   if (!rt) return send(res, 404, { error:'Не найдено' });
   let size = 0, chunks = [];
   req.on('data', c => { size += c.length; if (size > 20e6) { send(res, 413, { error:'Слишком большой запрос (фото)' }); req.destroy(); } else chunks.push(c); });
-  req.on('end', () => {
+  req.on('end', async () => {
     try {
       let b = {}; if (chunks.length) { try { b = JSON.parse(Buffer.concat(chunks).toString()); } catch { need(400, 'Неверный JSON'); } }
       const tok = (req.headers.authorization || '').replace(/^Bearer\s+/i, ''); req.token = tok;
       const s = db.sessions[tok], u = s && db.users[s.userId];
       if (rt.auth && !u) need(401, 'Требуется вход');
-      const out = rt.h(q, b, u, req, url.pathname.match(rt.re).groups || {});
-      if (out && typeof out.then === 'function') return out.then(v => send(res, 200, v), e => { if (!(e instanceof E)) console.error(e); send(res, e.code || 500, { error: e.message || 'Ошибка сервера' }); });
-      send(res, 200, out);
+      const out = await rt.h(q, b, u, req, url.pathname.match(rt.re).groups || {});
+      flush();
+      try {await durable();send(res,200,cloud.cfg?await cloud.expand(out):out)}catch{send(res,503,{error:'Не удалось подтвердить сохранение. Повторите запрос; данные не удалены.'})}
     } catch (e) { if (!(e instanceof E)) console.error(e); send(res, e.code || 500, { error: e.message || 'Ошибка сервера' }); }
   });
 }).listen(PORT, '0.0.0.0', () => console.log(`Сервер: http://0.0.0.0:${PORT}` + (PUB ? `  публичный: ${PUB}` : '')));
@@ -918,3 +936,4 @@ http.createServer((req, res) => {
 // чистка просроченных кодов входа
 setInterval(() => { waAuth.clean(); for (const c in db.codes) if (now() - db.codes[c].createdAt > 600e3) { delete db.codes[c]; touch(); } }, 60e3);
 botLoop();
+})().catch(()=>{console.error('Server initialization failed. Check database schema, configuration and writer lease. Existing data was not replaced.');process.exit(78)});

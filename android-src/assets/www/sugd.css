@@ -109,6 +109,16 @@ select.color-select{background-repeat:no-repeat!important;background-position:ri
 
 .profile-photo-field .av{color:var(--blue)}
 
+/* 9.22: compact editorial text rhythm, no stacked margin/padding or fixed title holes. */
+.grid{align-items:start}
+.card .p{margin:9px 5px 0!important;padding:0!important;gap:3px 7px;line-height:1.25}
+.card .price-current{font-size:17px;font-weight:750;letter-spacing:-.3px}
+.price-unit{font-size:.75em;font-weight:550;letter-spacing:0;white-space:nowrap}
+.price-saving{display:inline-flex;align-items:center;gap:5px;white-space:nowrap}
+.card .t{margin:6px 5px 0!important;padding:0!important;min-height:0!important;font-size:13px;line-height:1.4;font-weight:600;letter-spacing:0}
+.card .m{margin:6px 5px 0!important;padding:0!important;font-size:11px;line-height:1.35;letter-spacing:0;white-space:normal}
+.card .m+.m{margin-top:3px!important;font-size:10px}
+.card .sub2{margin:5px 5px 0;font-size:10px;line-height:1.3}
 /* 9.21: two readable columns even on 320px screens; price precedes title. */
 .wrap{width:100%;min-width:0;box-sizing:border-box}
 #v-home .grid,.grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:18px 10px}
