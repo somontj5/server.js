@@ -1,0 +1,86 @@
+name: GlassMarket test server (6h)
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '0 */6 * * *'   # автоперезапуск каждые 6 часов
+permissions:
+  contents: write            # нужно, чтобы записать server-url.txt в репозиторий
+concurrency:
+  group: gm-server
+  cancel-in-progress: false
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install dependencies
+        run: |
+          if [ -f package.json ]; then npm install; fi
+
+      - name: Restore DB from previous run
+        uses: actions/cache/restore@v4
+        with:
+          path: data
+          key: gm-db-${{ github.run_id }}
+          restore-keys: gm-db-
+
+      - name: Start Cloudflare tunnel
+        run: |
+          curl -sL -o cf.deb https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64.deb
+          sudo dpkg -i cf.deb >/dev/null
+          nohup cloudflared tunnel --no-autoupdate --url http://localhost:8080 > cf.log 2>&1 &
+          URL=""
+          for i in $(seq 1 60); do
+            URL=$(grep -o 'https://[a-z0-9-]*\.trycloudflare\.com' cf.log | grep -v '^https://api\.' | head -1)
+            [ -n "$URL" ] && break
+            sleep 2
+          done
+          if [ -z "$URL" ]; then echo "Tunnel URL not found"; cat cf.log; exit 1; fi
+          echo "PUBLIC_URL=$URL" >> $GITHUB_ENV
+          echo "## Адрес сервера: $URL" >> $GITHUB_STEP_SUMMARY
+          echo "Server URL: $URL"
+
+      - name: Publish server URL for the app
+        run: |
+          echo "$PUBLIC_URL" > server-url.txt
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898333+github-actions[bot]@users.noreply.github.com"
+          git add server-url.txt
+          git commit -m "server-url: $PUBLIC_URL [skip ci]" || echo "no changes"
+          for i in 1 2 3; do git pull --rebase -q && git push -q && break; sleep 3; done
+
+      - name: Run server (~5h50m)
+        env:
+          BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+          # Set repository variable GM_STORAGE_BACKEND=supabase AFTER running the SQL.
+          # Default stays file so merely adding secrets cannot stop the working app.
+          GM_STORAGE_BACKEND: ${{ vars.GM_STORAGE_BACKEND || 'file' }}
+          GM_SUPABASE_IMPORT: 'true'
+          DB_FILE: data/db.json
+          VERIFY_TOKEN: ${{ secrets.VERIFY_TOKEN }}
+          APP_SECRET: ${{ secrets.APP_SECRET }}
+          WA_LOGIN_NUMBER: ${{ secrets.WA_LOGIN_NUMBER }}
+          WA_PHONE_NUMBER_ID: ${{ secrets.WA_PHONE_NUMBER_ID }}
+          TRUST_CF_PROXY: 'true'
+          PUBLIC_URL: ${{ env.PUBLIC_URL }}
+        run: |
+          set +e
+          timeout -k 90s -s TERM 350m node server.js
+          result=$?
+          if [ "$result" -ne 0 ] && [ "$result" -ne 124 ]; then exit "$result"; fi
+
+      - name: Save DB for next run
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: data
+          key: gm-db-${{ github.run_id }}

@@ -774,7 +774,7 @@ function isTop(l){return !l.archived&&l.boostedUntil&&l.boostedUntil>Date.now()}
 function fmtNum(n){return String(Math.round(n)).replace(/\B(?=(\d{3})+(?!\d))/g,'\u00a0')}
 function num(l){return GMPrice.effective(l)}
 function priceText(l){return GMPrice.text(l)}
-function priceHtml(l){var sale=GMPrice.sale(l),base=GMPrice.original(l);return '<span class="price-current">'+esc(priceText(l))+'</span>'+(sale===null?'':'<del aria-label="Старая цена">'+esc(GMPrice.format(base))+'</del><span class="discount-badge">−'+Math.round((1-sale/base)*100)+'%</span>')}
+function priceHtml(l){var sale=GMPrice.sale(l),base=GMPrice.original(l),n=GMPrice.effective(l);return '<span class="price-current">'+esc(n===null?priceText(l):GMPrice.format(n)+' ₽')+(n!==null&&l.unit?' <span class="price-unit">'+esc(l.unit)+'</span>':'')+'</span>'+(sale===null?'':'<span class="price-saving"><del aria-label="Старая цена">'+esc(GMPrice.format(base))+'</del><span class="discount-badge">−'+Math.round((1-sale/base)*100)+'%</span></span>')}
 function plural(n,a,b,c){var m=n%10,h=n%100;return n+' '+(m===1&&h!==11?a:(m>=2&&m<=4&&(h<10||h>=20)?b:c))}
 function ago(t){var d=Date.now()-t,m=Math.floor(d/6e4);if(m<1)return'только что';if(m<60)return m+' мин. назад';var h=Math.floor(d/36e5);if(h<24)return h+' ч. назад';var dt=new Date(t),y=new Date();y.setDate(y.getDate()-1);
  var tm=dt.toLocaleTimeString('ru-RU',{hour:'2-digit',minute:'2-digit'});if(dt.toDateString()===y.toDateString())return'вчера в '+tm;return dt.toLocaleDateString('ru-RU',{day:'numeric',month:'long'})}

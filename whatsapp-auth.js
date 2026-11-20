@@ -4,7 +4,7 @@ const crypto = require('node:crypto');
 const hash = v => crypto.createHash('sha256').update(v).digest('hex');
 const random = n => crypto.randomBytes(n).toString('hex');
 const equal = (a,b) => typeof a === 'string' && typeof b === 'string' && Buffer.byteLength(a) === Buffer.byteLength(b) && crypto.timingSafeEqual(Buffer.from(a),Buffer.from(b));
-module.exports = function whatsappAuth({db, persist, userOut, env=process.env, clock=Date.now}) {
+module.exports = function whatsappAuth({db, persist, commit=()=>Promise.resolve(), userOut, env=process.env, clock=Date.now}) {
   const ttl=300000, verify=env.VERIFY_TOKEN||'', secret=env.APP_SECRET||'';
   const number=env.WA_LOGIN_NUMBER||'', phoneId=env.WA_PHONE_NUMBER_ID||'';
   const enabled=!!(verify && secret && /^[1-9]\d{7,14}$/.test(number) && /^\d+$/.test(phoneId));
@@ -85,13 +85,13 @@ module.exports = function whatsappAuth({db, persist, userOut, env=process.env, c
     if(typeof sig!=='string'||!/^sha256=[a-f0-9]{64}$/.test(sig)){req.resume();return reply(403,'Invalid signature');}
     let size=0,chunks=[],large=false;
     req.on('data',c=>{size+=c.length;if(size>262144){if(!large){large=true;chunks=[];reply(413,'Too large');}}else if(!large)chunks.push(c)});
-    req.on('end',()=>{
+    req.on('end',async()=>{
       if(large)return;
       const raw=Buffer.concat(chunks),expected='sha256='+crypto.createHmac('sha256',secret).update(raw).digest('hex');
       if(!equal(sig,expected))return reply(403,'Invalid signature');
       let event;try{event=JSON.parse(raw.toString('utf8'));if(!event||typeof event!=='object')throw Error();}catch{return reply(400,'Invalid JSON');}
       // Only local state mutation + atomic disk commit before acknowledgement. No network work.
-      try{receive(event);reply(200,'EVENT_RECEIVED');}catch{reply(500,'Retry later');}
+      try{receive(event);await commit();reply(200,'EVENT_RECEIVED');}catch{reply(500,'Retry later');}
     });
     req.on('error',()=>{});
   }
