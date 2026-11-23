@@ -29,7 +29,26 @@ async function unpack(file,dir){
  }
  if(!snapshot||count!==Object.keys(snapshot.tables.gm_media).length)throw Error('Incomplete backup');return snapshot;
 }
+// Read-only activation check. Never claims a writer lease or changes rows.
+async function preflight(store,legacyFile){
+ const revision=await store.rpc('gm_ping',{}),snapshot=await store.rpc('gm_snapshot',{p_claim:false});
+ if(!Number.isSafeInteger(Number(revision))||!snapshot||typeof snapshot.initialized!=='boolean'||!snapshot.tables)throw Error('Unexpected Supabase schema response; run the project SQL');
+ for(const table of TABLES)if(!snapshot.tables[table]||typeof snapshot.tables[table]!=='object'||Array.isArray(snapshot.tables[table]))throw Error('Supabase snapshot is incomplete: '+table);
+ const response=await store.request('/storage/v1/bucket/gm-media',undefined,'GET'),bucket=await response.json();
+ if(bucket.id!=='gm-media'||bucket.public!==false)throw Error('gm-media bucket must exist and be private');
+ if(!bucket.file_size_limit||Number(bucket.file_size_limit)>2097152)throw Error('gm-media bucket must limit files to 2 MB');
+ const counts=Object.fromEntries(TABLES.map(t=>[t,Object.keys(snapshot.tables[t]).length]));
+ if(!snapshot.initialized){
+  if(!legacyFile||!fs.existsSync(legacyFile))throw Error('Cloud is empty and legacy database is missing; refusing activation');
+  const legacy=JSON.parse(fs.readFileSync(legacyFile,'utf8'));
+  if(!Object.keys(legacy.users||{}).length&&!Object.keys(legacy.listings||{}).length)throw Error('Legacy database is empty; refusing activation');
+  console.log('Cloud schema and private bucket verified; legacy import required.');
+ }else console.log('Existing Supabase data verified; legacy cache will not overwrite it.');
+ console.log('Cloud row counts:',counts);
+ return {initialized:snapshot.initialized,revision:Number(snapshot.revision),counts};
+}
 async function main(){const cmd=process.argv[2],file=process.argv[3],store=new SupabaseStore();if(!store.cfg&&cmd!=='inspect-json')throw Error('Supabase secrets required');
+ if(cmd==='preflight')return preflight(store,file);
  if(cmd==='ping'){await store.rpc('gm_ping',{});console.log('Supabase health query succeeded');return}
  if(cmd==='backup'){if(!file)throw Error('Provide backup output file');return backup(store,file)}
  if(cmd==='inspect-json'||cmd==='import-json'){
@@ -51,7 +70,7 @@ async function main(){const cmd=process.argv[2],file=process.argv[3],store=new S
    }
   }finally{fs.rmSync(dir,{recursive:true,force:true})}return;
  }
- throw Error('Commands: ping, inspect-json FILE, import-json FILE --apply, backup FILE, verify-backup FILE, restore-backup FILE --apply');
+ throw Error('Commands: preflight LEGACY_FILE, ping, inspect-json FILE, import-json FILE --apply, backup FILE, verify-backup FILE, restore-backup FILE --apply');
 }
 if(require.main===module)main().catch(e=>{console.error(e.message);process.exitCode=1});
-module.exports={backup,unpack};
+module.exports={backup,unpack,preflight};

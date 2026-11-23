@@ -78,11 +78,11 @@ def main():
     parser.add_argument('--signer', required=True)
     parser.add_argument('--keystore', required=True)
     parser.add_argument('--password-file', required=True)
-    parser.add_argument('--base', default='apk/GlassMarket9.16.apk')
+    parser.add_argument('--base', default='apk/SUGD.TJ-9.22.apk')
     parser.add_argument('--android-jar', help='Android API 34 android.jar')
     parser.add_argument('--d8', help='R8 JAR providing D8')
     parser.add_argument('--dex', help='Compiled native classes.dex, inside workspace')
-    parser.add_argument('--out', default='apk/GlassMarket9.17.apk')
+    parser.add_argument('--out', default='apk/SUGD.TJ-9.23.apk')
     args = parser.parse_args()
     if args.android_jar and args.d8:
         classes, dex_dir = inside('.local-build/native-classes'), inside('.local-build/native-dex')
