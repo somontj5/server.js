@@ -14,7 +14,7 @@ test('Client scripts parse, size-recognition action removed, native links compil
  for(const x of html.matchAll(/<script(?: [^>]*)?>([\s\S]*?)<\/script>/g))new vm.Script(x[1]);
  assert.ok(html.includes('id="f-desc"'));assert.ok(html.includes('minlength="20"'));assert.ok(html.includes('select class="inp color-select"'));
  assert.ok(!fs.readFileSync('android-src/assets/www/sizes-ui.js','utf8').includes('Распознать'));
- const manifest=fs.readFileSync('android-src/AndroidManifest.xml','utf8');assert.ok(manifest.includes('android:scheme="glassmarket"'));assert.ok(manifest.includes('versionName="9.23"'));assert.ok(manifest.includes('versionCode="112"'));
+ const manifest=fs.readFileSync('android-src/AndroidManifest.xml','utf8');assert.ok(manifest.includes('android:scheme="glassmarket"'));assert.ok(manifest.includes('versionName="9.23"'));assert.ok(manifest.includes('versionCode="113"'));
 });
 test('Cold and warm recommendations avoid seller/category monopolies when alternatives exist',()=>{
  const code=fs.readFileSync('server.js','utf8'),a=code.indexOf('function recommend('),b=code.indexOf('// Gemini вызывается',a);
