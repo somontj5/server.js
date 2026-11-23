@@ -1,13 +1,14 @@
-// СтеклоМаркет — тестовый сервер. Без зависимостей, Node 20+.
+// SUGD.TJ — тестовый сервер. Без зависимостей, Node 20+.
 // Вход: через Telegram-бота (подтверждение номера телефона). Уведомления — тоже в Telegram.
 // Сторож: при падении сервер перезапускается сам (не ждём следующего запуска workflow)
 if (!process.env.GM_CHILD) {
   const { spawn } = require('child_process'); let child, stop = false;
   const run = () => { child = spawn(process.execPath, [__filename], { stdio:'inherit', env: Object.assign({}, process.env, { GM_CHILD:'1' }) });
-    child.on('exit', c => { if (stop) return process.exit(0); console.error('Сервер упал (код ' + c + '), перезапуск через 2 с'); setTimeout(run, 2000); }); };
-  ['SIGINT','SIGTERM'].forEach(s => process.on(s, () => { stop = true; if (child) child.kill(s); setTimeout(() => process.exit(0), 5000); }));
+    child.on('exit', c => { if (stop || c === 78) return process.exit(c || 0); console.error('Сервер упал (код ' + c + '), перезапуск через 2 с'); setTimeout(run, 2000); }); };
+  ['SIGINT','SIGTERM'].forEach(s => process.on(s, () => { stop = true; if (child) child.kill(s); setTimeout(() => process.exit(1), 85000).unref(); }));
   run(); return;
 }
+(async function main(){
 const http = require('http'), fs = require('fs'), crypto = require('crypto');
 const PORT = +process.env.PORT || 8080;
 const TOKEN = process.env.BOT_TOKEN || '';
@@ -19,16 +20,26 @@ const Validation = require('./android-src/assets/www/validation.js');
 const CATS = ['transport','realty','electronics','clothes','home','animals','food','other'];
 
 let db = { users:{}, sessions:{}, codes:{}, listings:{}, threads:{}, reviews:[], searches:{} };
-try { Object.assign(db, JSON.parse(fs.readFileSync(DB_FILE, 'utf8'))); console.log('БД загружена'); } catch {}
-let dirty = false;
-const touch = () => { dirty = true; };
+let legacy=null;
+try { legacy=JSON.parse(fs.readFileSync(DB_FILE, 'utf8'));Object.assign(db,legacy);console.log('Локальный снимок загружен'); } catch(e) { if(e.code!=='ENOENT')throw Error('Database file is invalid; refusing empty startup'); }
+const {SupabaseStore}=require('./supabase-store');
+const cloud=new SupabaseStore(process.env.GM_STORAGE_BACKEND==='file'?{}:process.env);
+if((process.env.GM_REQUIRE_SUPABASE==='true'||process.env.GM_STORAGE_BACKEND==='supabase')&&!cloud.cfg)throw Error('Supabase configuration required');
+if(cloud.cfg)db=await cloud.open(legacy);
+else if(JSON.stringify(db).includes('gm-media:'))throw Error('Cloud recovery snapshot requires Supabase; use the pre-migration backup for file mode');
+let dirty = false, generation=0,cloudGeneration=-1;
+const touch = () => { dirty = true;generation++; };
+async function durable(){if(!cloud.cfg)return;const v=generation;if(v===cloudGeneration&&cloud.healthy)return;await cloud.save(db);cloudGeneration=v;}
 function flush() { if (!dirty) return; fs.mkdirSync(require('path').dirname(DB_FILE), { recursive:true }); const tmp = DB_FILE + '.tmp'; fs.writeFileSync(tmp, JSON.stringify(db), { mode:0o600 }); fs.renameSync(tmp, DB_FILE); dirty = false; }
-setInterval(flush, 3000);
-['SIGINT','SIGTERM'].forEach(s => process.on(s, () => { dirty = true; flush(); process.exit(0); }));
+setInterval(()=>{flush();durable().catch(()=>console.error('Supabase save pending; responses will not acknowledge unsaved writes'));},3000);
+let stopping=false;
+['SIGINT','SIGTERM'].forEach(s => process.on(s, async () => {if(stopping)return;stopping=true;dirty=true;flush();try{await durable();if(cloud.cfg)await cloud.close();process.exit(0)}catch{console.error('Cloud save failed; local recovery snapshot retained');process.exit(1)}}));
 
 const rid = (n=6) => crypto.randomBytes(n).toString('hex');
 const now = () => Date.now();
 const str = (v, max=200) => (v == null ? '' : String(v)).trim().slice(0, max);
+const Pricing = require('./android-src/assets/www/pricing.js');
+const effectivePrice = l => Pricing.effective(l);
 const priceNum = p => { const m = String(p||'').replace(/\s/g,'').match(/\d+([.,]\d+)?/); return m ? parseFloat(m[0].replace(',','.')) : null; };
 // Таджикистан: +992 и ровно 9 цифр; ряд и магазин — только цифры
 const onlyDigits = v => String(v == null ? '' : v).replace(/\D/g, '');
@@ -67,7 +78,7 @@ async function onMessage(m) {
     const user = Object.values(db.users).find(x => x.tgId === m.from.id);
     if (!user) return say(chat, 'Сначала нажмите «Войти через Telegram» в приложении.', { reply_markup:{ remove_keyboard:true } });
     user.chatId = chat; user.phone = '+' + String(m.contact.phone_number).replace(/\D/g,''); touch();
-    return say(chat, '✅ Номер ' + user.phone + ' сохранён в профиле.', { reply_markup:{ remove_keyboard:true } });
+    return say(chat, 'Номер ' + user.phone + ' сохранён в профиле.', { reply_markup:{ remove_keyboard:true } });
   }
   if (text.startsWith('/start')) {
     const code = text.split(' ')[1];
@@ -78,24 +89,24 @@ async function onMessage(m) {
       user.chatId = chat; user.username = m.from.username || '';
       user.name = user.name || [m.from.first_name, m.from.last_name].filter(Boolean).join(' ');
       Object.assign(db.codes[code], { chat, status:'ok', userId:user.id }); touch();
-      await say(chat, '✅ Вы вошли в СтеклоМаркет как ' + (user.name || 'пользователь') + '.\nВернитесь в приложение — вход уже выполнен.');
+      await say(chat, 'Вы вошли в SUGD.TJ как ' + (user.name || 'пользователь') + '.\nВернитесь в приложение — вход уже выполнен.');
       if (!user.phone) return say(chat, 'Хотите, чтобы покупатели могли позвонить? Поделитесь номером (необязательно) 👇', {
         reply_markup:{ keyboard:[[{ text:'📱 Поделиться номером', request_contact:true }]], resize_keyboard:true, one_time_keyboard:true } });
       return;
     }
     if (code && code.startsWith('l_')) return sendCard(chat, code.slice(2));
-    return say(chat, 'Это бот входа в СтеклоМаркет.\nНажмите «Войти через Telegram» в приложении.' + (PUB ? '\n\nАдрес сервера: ' + PUB : ''));
+    return say(chat, 'Это бот входа в SUGD.TJ.\nНажмите «Войти через Telegram» в приложении.' + (PUB ? '\n\nАдрес сервера: ' + PUB : ''));
   }
   if (text === '/url') return say(chat, PUB || 'Адрес сервера не задан');
   if (text === '/stop') { const u = Object.values(db.users).find(x => x.tgId === m.from.id); if (u) { u.mute = true; touch(); } return say(chat, '🔕 Уведомления выключены. /notify — включить.'); }
-  if (text === '/notify') { const u = Object.values(db.users).find(x => x.tgId === m.from.id); if (u) { u.mute = false; touch(); } return say(chat, '🔔 Уведомления включены.'); }
+  if (text === '/notify') { const u = Object.values(db.users).find(x => x.tgId === m.from.id); if (u) { u.mute = false; touch(); } return say(chat, 'Уведомления включены.'); }
 }
 // Карточка объявления в Telegram (ссылка «поделиться» ведёт сюда — она постоянная, в отличие от адреса туннеля)
 async function sendCard(chat, id) {
   const l = db.listings[id];
   if (!l || l.archived) return say(chat, '😔 Объявление снято с публикации или удалено.');
   const s = db.users[l.sellerId] || {}, ph = l.contact && l.contact !== 'chat' ? (l.phone || s.phone || '') : '';
-  const cap = `${l.name}\n💰 ${l.price || 'цена не указана'}\n📍 ${l.bazaar ? 'Базар ' + l.bazaar + ', ' : ''}Ряд ${l.row}, магазин №${l.shopNum} (${l.shopName})` + (ph ? `\n📞 ${ph}` : '') + (l.desc ? `\n\n${l.desc.slice(0, 600)}` : '') + '\n\nНаписать продавцу можно в приложении СтеклоМаркет.';
+  const cap = `${l.name}\nЦена: ${Pricing.text(l)}\n${l.bazaar ? 'Базар ' + l.bazaar + ', ' : ''}${l.sector ? 'сектор ' + l.sector + ', ' : ''}Ряд ${l.row}, магазин №${l.shopNum} (${l.shopName})` + (ph ? `\nТелефон: ${ph}` : '') + (l.desc ? `\n\n${l.desc.slice(0, 600)}` : '') + '\n\nНаписать продавцу можно в приложении SUGD.TJ.';
   const p = l.photos[0];
   try {
     if (p && p.startsWith('http')) { const r = await tg('sendPhoto', { chat_id: chat, photo: p, caption: cap.slice(0, 1024) }); if (r.ok) return; }
@@ -116,7 +127,7 @@ function notify(userId, text) { const u = db.users[userId]; if (u && !u.mute) sa
 // с затуханием (половина за 7 дней), копятся по действиям: просмотр, избранное, чат, поиск.
 const STOP = new Set('для или при без под над все это как что так его она они уже еще очень новый новая новое продам продаю цена торг срочно'.split(' '));
 const stem = w => w.length > 6 ? w.slice(0, w.length - 2) : w;   // «стеклянный» ≈ «стеклянная»
-function words(t) { return (String(t||'').toLowerCase().replace(/ё/g,'е').match(/[a-zа-я0-9]{3,}/g) || []).filter(w => !STOP.has(w) && !/^\d+$/.test(w)).map(stem); }
+function words(t) { return (String(t||'').toLowerCase().replace(/ё/g,'е').replace(/ӯ|ў/g,'у').replace(/қ/g,'к').replace(/ҳ/g,'х').replace(/ҷ/g,'ж').replace(/ӣ/g,'и').replace(/ғ/g,'г').match(/[a-zа-я0-9]{3,}/g) || []).filter(w => !STOP.has(w) && !/^\d+$/.test(w)).map(stem); }
 // Одежда: подкатегория приложения (outer, knit, tops…) + группы синонимов, чтобы «худи» ≈ «толстовка», «кросы» ≈ «кроссовки»
 const SUBS = ['outer','dress','tops','knit','pants','suits','sport','under','home','shoes','bags','acc','kids','other','national','headwear'];
 const SYN = {
@@ -161,11 +172,9 @@ function tagIt(l, inc) {
 }
 function makeTags(l) {
   const t = new Set(['c:' + l.cat]);
-  for (const x of (l.tt || TAGS.visible(l))) t.add('k:' + x);        // теги-словарь: синонимы находят друг друга
+  for (const x of TAGS.indexTags(l)) t.add(x);        // теги-словарь: синонимы находят друг друга
   for (const x of (l.nu || [])) t.add('k:' + x);
-  words(l.name).forEach(w => t.add('w:' + w));
-  words(l.desc).slice(0, 30).forEach(w => t.add('w:' + w));
-  words(l.material).forEach(w => t.add('w:' + w));
+  // Structural characteristics must not be displaced by a verbose description.
   if (l.sub) t.add('g:' + l.sub);
   if (l.section) t.add('d:' + l.section);
   for (const w of words(l.name)) { const g = subOf(w); if (g) t.add('g:' + g); }       // «Худи оверсайз» → g:knit, даже если подкатегория не указана
@@ -173,12 +182,15 @@ function makeTags(l) {
   for (const e of Sizes.read(l).entries) for (const v of e.values) t.add('z:' + e.system + ':' + v);
   (l.ai || []).forEach(x => { t.add('x:' + x); words(x).forEach(w => t.add('w:' + w)); });
   if (l.aiSub) t.add('g:' + l.aiSub); if (l.aiGender) t.add('a:gender:' + l.aiGender); if (l.aiSeason) t.add('a:season:' + l.aiSeason);
-  for (const w of words(l.desc).slice(0, 30)) { const g = subOf(w); if (g && !l.sub) t.add('g:' + g); }                                            // теги от Gemini (если включён)
-  const pt = priceTag(l.price); if (pt) t.add(pt);
+  for (const w of words(l.desc).slice(0, 180)) { const g = subOf(w); if (g && !l.sub) t.add('g:' + g); }                                            // теги от Gemini (если включён)
+  const pt = priceTag(effectivePrice(l)); if (pt) t.add(pt);
   if (l.sellerId) t.add('s:' + l.sellerId);
   if (l.row) t.add('r:' + String(l.row).toLowerCase());
   if (l.bazaar) t.add('w:' + l.bazaar.toLowerCase());
-  return [...t].slice(0, 60);
+  words(l.name).forEach(w => t.add('w:' + w));
+  words(l.material).forEach(w => t.add('w:' + w));
+  words(l.desc).slice(0, 180).forEach(w => t.add('w:' + w));
+  return [...t].slice(0, 320);
 }
 const HALF = 7 * 864e5, W = { view:1, fav:4, unfav:-3, chat:6, search:2, saved:3, hide:-8 };
 function decayed(e, t) { return e[0] * Math.pow(0.5, (t - e[1]) / HALF); }
@@ -208,7 +220,17 @@ function learnListing(u, l, kind) {
   if (kind === 'hide') { u.hidden = u.hidden || []; if (!u.hidden.includes(l.id)) u.hidden.push(l.id); if (u.hidden.length > 500) u.hidden.shift(); }
   return true;
 }
-const learnQuery = (u, s, kind) => { const ws = words(s.q); learn(u, [...ws.map(w => 'w:' + w), ...ws.map(subOf).filter(Boolean).map(g => 'g:' + g), ...(SUBS.includes(s.sub || s.cat) ? ['g:' + (s.sub || s.cat)] : []), ...(s.section ? ['d:' + s.section] : [])], kind); };
+const learnQuery = (u, s, kind) => {
+  if (!u) return;
+  if (kind === 'search') {
+    const key = JSON.stringify([TAGS.norm(s.q),s.sub||s.cat,s.section]), t = now();
+    u.querySignals = u.querySignals || {};
+    if (u.querySignals[key] && t-u.querySignals[key]<5*60e3) return;
+    u.querySignals[key]=t;
+    Object.keys(u.querySignals).sort((a,b)=>u.querySignals[b]-u.querySignals[a]).slice(60).forEach(k=>delete u.querySignals[k]);
+  }
+  const ws = words(s.q); learn(u, [...TAGS.queryTags(s.q), ...ws.map(w => 'w:' + w), ...ws.map(subOf).filter(Boolean).map(g => 'g:' + g), ...(SUBS.includes(s.sub || s.cat) ? ['g:' + (s.sub || s.cat)] : []), ...(s.section ? ['d:' + s.section] : [])], kind);
+};
 function hash(s) { let h = 2166136261; for (let i = 0; i < s.length; i++) h = Math.imul(h ^ s.charCodeAt(i), 16777619); return (h >>> 0) / 4294967296; }
 function recommend(arr, u) {
   const t = now(), I = (u && u.interests) || {}, day = Math.floor(t / 864e5);
@@ -216,8 +238,9 @@ function recommend(arr, u) {
   const cold = !Object.keys(I).length;
   const scored = arr.filter(l => !hidden.has(l.id)).map(l => {
     const tags = l.tags || (l.tags = makeTags(l));
-    let aff = 0; if (!cold) for (const g of tags) if (I[g]) aff += decayed(I[g], t);
-    const ageD = (t - l.createdAt) / 864e5;
+    // A long description must not win just by containing more words.
+    let aff = 0; if (!cold) { const hits = tags.filter(g => I[g]).map(g => decayed(I[g], t)).sort((a,b) => Math.abs(b)-Math.abs(a)).slice(0,12); aff = hits.reduce((sum,w) => sum+w,0) / Math.sqrt(Math.max(1,hits.length)); }
+    const ageD = Math.max(0,(t - l.createdAt) / 864e5);
     let sc = 6 * Math.tanh(aff / 8)                   // персональный интерес
       + 3 * Math.exp(-ageD / 5)                        // свежесть
       + (isTop(l) ? 2.5 : 0)                           // платный ТОП
@@ -242,7 +265,7 @@ function recommend(arr, u) {
 const AI_WORKER_TOKEN = process.env.AI_WORKER_TOKEN || (TOKEN
   ? crypto.createHmac('sha256', TOKEN).update('glassmarket-ai-worker-v1').digest('hex') : '');
 const aiVersion = l => crypto.createHash('sha256').update(JSON.stringify([
-  'tags-v2', tagText(l), TAGS.layer1(l), TAGS.DICT()
+  'tags-v3', tagText(l), TAGS.layer1(l), TAGS.DICT()
 ])).digest('hex');
 let aiStatus = db.aiStatus || { state: 'not_run', processed: 0 };
 for (const l of Object.values(db.listings)) {
@@ -273,7 +296,7 @@ if (process.env.GITHUB_ACTIONS === 'true') {
 
 
 /* ================= Представления ================= */
-const pubUser = u => u && ({ id:u.id, name:u.name, shopName:u.shopName, bazaar:u.bazaar||'', row:u.row, shopNum:u.shopNum, about:u.about||'', rating: rating(u.id), ig: u.ig || '', igInfo: u.ig ? igPub(u.ig) : null, avatar: u.avatar ? '/u/' + u.id + '/avatar?v=' + (u.avTs || 0) : '' });
+const pubUser = u => u && ({ id:u.id, name:u.name, shopName:u.shopName, bazaar:u.bazaar||'', sector:u.sector||'', row:u.row, shopNum:u.shopNum, about:u.about||'', rating: rating(u.id), ig: u.ig || '', igInfo: u.ig ? igPub(u.ig) : null, avatar: u.avatar ? '/u/' + u.id + '/avatar?v=' + (u.avTs || 0) : '' });
 // ===== Instagram: плашка аккаунта продавца (публичные данные профиля, кэш 12 ч) =====
 const IGC = {}; // username -> { t, d:{ name, pic, followers, following, posts, bio, verified, priv } | null }
 function igNorm(v) { let s = String(v == null ? '' : v).trim(); const m = s.match(/instagram\.com\/([A-Za-z0-9._]+)/i); if (m) s = m[1]; s = s.replace(/^@+/, '').toLowerCase();
@@ -318,7 +341,7 @@ async function igLoad(un) {
   const prev = IGC[un] || {}; // при ошибке оставляем прошлые данные
   IGC[un] = { t: ex === null && !d ? (prev.t || 0) : now(), d: ex === false ? null : (d || prev.d || null), ex: ex === null ? (prev.ex === undefined ? null : prev.ex) : ex };
 }
-const meUser = u => Object.assign(pubUser(u), { phone:u.phone });
+const meUser = u => Object.assign(pubUser(u), { phone:u.phone, guest:!!u.guest });
 function rating(uid) { const a = db.reviews.filter(r => r.sellerId === uid); return { n:a.length, avg: a.length ? +(a.reduce((s,r)=>s+r.stars,0)/a.length).toFixed(2) : 0 }; }
 const dayKey = () => new Date().toISOString().slice(0,10);
 function bump(l, k) { if (!l) return; l.st = l.st || {}; const d = dayKey(); const o = l.st[d] = l.st[d] || {}; o[k] = (o[k]||0) + 1;
@@ -334,8 +357,10 @@ function listingOut(l, full) {
   // Tagging is internal: never return training/debug fields, even to the owner.
   const o = Object.assign({}, l, { top: isTop(l), seller: pubUser(s), shareUrl: shareUrl(l.id) });
   for (const k of ['tags','atags','tt','tu','nu','mtags','hideTags','ai','ai2','aiAt','aiSub','aiGender','aiSeason','aiVersion','aiModel','unknownCounted','st']) delete o[k];
+  o.priceNum = Pricing.original(l); o.discountPrice = Pricing.sale(l); o.effectivePrice = effectivePrice(l); o.price = Pricing.text(l);
   o.favCount = l.favCount || 0; o.views = l.views || 0;
-  if (!full) { o.photo = l.photos[0] || null; o.photoCount = l.photos.length; delete o.photos; delete o.desc; }
+  if(cloud.cfg)o.photos=l.photos.map((_,i)=>cloud.publicPhoto(l,i,PUB||''));
+  if (!full) { o.photo = cloud.cfg ? cloud.publicPhoto(l,0,PUB||'') || null : l.photos[0] || null; o.photoCount = l.photos.length; delete o.photos; delete o.desc; }
   o.ways = contactWays(l);
   o.contact = o.ways.includes('phone') && o.ways.includes('wa') ? 'both' : (o.ways[0] || 'chat');
   o.phone = o.ways.length ? (l.phone || s.phone || '') : '';
@@ -371,7 +396,7 @@ function matches(l, s) {
   if (s.gender && (l.a || {}).gender !== s.gender && (l.a || {}).gender !== 'Унисекс') return false;
   if (s.sizes && !Sizes.rank(l, s.sizes)) return false;
   if (s.q) { const qs = words(s.q), keys = TAGS.queryTags(s.q); if (qs.length && !relevance(l, qs, s.q)) return false; if (!qs.length && keys.length && !keys.some(k => (l.tags || makeTags(l)).includes(k))) return false; }
-  const p = priceNum(l.price), a = parseFloat(s.min), b = parseFloat(s.max);
+  const p = effectivePrice(l), a = parseFloat(s.min), b = parseFloat(s.max);
   if (!isNaN(a) || !isNaN(b)) { if (p == null) return false; if (!isNaN(a) && p < a) return false; if (!isNaN(b) && p > b) return false; }
   return true;
 }
@@ -382,8 +407,11 @@ function cleanListing(b, l) {
     const error = Validation.error(kind, value); if (error) need(400, error);
   }
   if (b.cat !== undefined) l.cat = CATS.includes(b.cat) ? b.cat : 'other';
-  ['name','price','shopName'].forEach(k => { if (b[k] !== undefined) l[k] = str(b[k], 80); });
+  try { Object.assign(l, Pricing.clean(b,l)); } catch(e) { need(400,e.message); }
+  ['name','shopName'].forEach(k => { if (b[k] !== undefined) l[k] = str(b[k], 80); });
   if (b.bazaar !== undefined) l.bazaar = bazOf(b.bazaar);
+  if (b.sector !== undefined) { const v=Validation.clean(b.sector).toUpperCase(); if ((v || ['Саховат','Сомон'].includes(l.bazaar)) && Validation.sectorError(v)) need(400,Validation.sectorError(v)); l.sector=['Саховат','Сомон'].includes(l.bazaar)?v:''; }
+  if (!['Саховат','Сомон'].includes(l.bazaar)) l.sector='';
   if (b.row !== undefined) l.row = onlyDigits(b.row).slice(0, 4);
   if (b.shopNum !== undefined) l.shopNum = onlyDigits(b.shopNum).replace(/^0+/, '').slice(0, 4); // контейнер 1..9999
   if (b.phone !== undefined) l.phone = tjPhone(b.phone); // Invalid numbers must not silently disappear.
@@ -403,7 +431,14 @@ function cleanListing(b, l) {
   if (b.material !== undefined) l.material = Catalog.materialList(str(b.material, 1000)).join(', '); // материал товара (понятное название: «Хлопок», «Натуральная кожа» и т.п.)
   if (Array.isArray(b.ways)) l.ways = [...new Set(b.ways.filter(x => ['phone','wa'].includes(x)))];
   if (b.contact !== undefined) l.contact = ['chat','both','phone','wa'].includes(b.contact) ? b.contact : 'chat';
-  if (Array.isArray(b.photos)) l.photos = b.photos.filter(p => typeof p === 'string' && (p.startsWith('data:image/') || p.startsWith('http'))).slice(0, 16);
+  if (Array.isArray(b.photos)) {
+    const original=(l.photos||[]).slice();
+    l.photos=b.photos.filter(p=>typeof p==='string'&&(p.startsWith('data:image/')||p.startsWith('http'))).slice(0,16).map(p=>{
+      if(cloud.cfg&&PUB){const index=original.findIndex((v,i)=>p===cloud.publicPhoto({id:l.id,photos:original},i,PUB));if(index>=0)return original[index];
+        if(p.startsWith(PUB+'/l/'+encodeURIComponent(l.id)+'/photos/'))need(400,'Фото больше недоступно. Добавьте его заново');}
+      return p;
+    });
+  }
   if (b.tags !== undefined) l.mtags = str(b.tags, 300);   // необязательные теги продавца
   if (b.hideTags !== undefined) l.hideTags = Array.isArray(b.hideTags) ? b.hideTags.map(x => str(x, 40)).filter(Boolean).slice(0, 20) : [];
   if (l.cat === 'clothes') Object.assign(l, Catalog.normalize(l));
@@ -419,7 +454,7 @@ function cleanListing(b, l) {
 function threadOut(t, uid) {
   const l = db.listings[t.listingId], last = t.messages[t.messages.length-1];
   const other = db.users[uid === t.buyerId ? t.sellerId : t.buyerId];
-  return { id:t.id, listingId:t.listingId, listing: l ? { id:l.id, name:l.name, price:l.price, photo:l.photos[0]||null, archived:!!l.archived } : null,
+  return { id:t.id, listingId:t.listingId, listing: l ? { id:l.id, name:l.name, price:Pricing.text(l), priceNum:Pricing.original(l), discountPrice:Pricing.sale(l), photo:l.photos[0]||null, archived:!!l.archived } : null,
     role: uid === t.buyerId ? 'buyer' : 'seller', other: pubUser(other), last: last ? Object.assign(shortMsg(last), { mine: last.from === uid }) : null, pin: t.pin || null,
     unread: uid === t.buyerId ? t.uB : t.uS, updatedAt: last ? last.t : t.createdAt };
 }
@@ -430,14 +465,39 @@ const route = (m, p, auth, h) => routes.push({ m, re: new RegExp('^' + p.replace
 class E extends Error { constructor(c, m) { super(m); this.code = c; } }
 const need = (c, m) => { throw new E(c, m); };
 
-route('GET', '/', 0, () => ({ ok:true, app:'GlassMarket', bot: BOT ? '@' + BOT : null, time: now() }));
-route('GET', '/health', 0, () => ({ ok:true }));
+route('GET', '/', 0, () => ({ ok:true, app:'SUGD.TJ', bot: BOT ? '@' + BOT : null, time: now() }));
+route('GET', '/health', 0, () => {if(cloud.cfg&&!cloud.healthy)need(503,'Хранилище временно недоступно');return {ok:true,storage:cloud.cfg?'supabase':'file'};});
 route('GET', '/categories', 0, () => ({ items: Catalog.items }));
 
 // Separate namespace: legacy Telegram sessions/users remain unchanged.
-const waAuth = require('./whatsapp-auth')({ db, persist: () => { touch(); flush(); }, userOut: meUser });
+const waAuth = require('./whatsapp-auth')({ db, persist: () => { touch(); flush(); }, commit:durable, userOut: meUser });
 route('POST', '/auth/whatsapp/start', 0, (q,b,u,req) => waAuth.start(req));
 route('POST', '/auth/whatsapp/check', 0, (q,b,u,req) => waAuth.check(req,b));
+
+// Guest accounts use ordinary sessions and all ordinary user APIs, never admin roles.
+// The random 256-bit device secret is a bearer credential; only its hash is persisted.
+const guestRate = new Map();
+route('POST', '/auth/guest', 0, (q, b, u, req) => {
+  if (typeof b.deviceKey !== 'string' || !/^[a-f0-9]{64}$/.test(b.deviceKey)) need(400, 'Неверный ключ гостевого аккаунта');
+  const key = crypto.createHash('sha256').update(b.deviceKey).digest('hex');
+  const accounts = db.guestAccounts = db.guestAccounts || {};
+  let account = accounts[key], user = account && db.users[account.userId];
+  if (!user) {
+    const ip = req.socket.remoteAddress || 'unknown', t = now();
+    for (const [k,v] of guestRate) if (t - v.t > 3600e3) guestRate.delete(k);
+    const rate = guestRate.get(ip) || { t, n:0 };
+    if (rate.n >= 40 || (!guestRate.has(ip) && guestRate.size >= 2000)) need(429, 'Слишком много новых аккаунтов. Попробуйте позже.');
+    rate.n++; guestRate.set(ip,rate);
+    user = { id:rid(12), name:'Гость', guest:true, createdAt:t, shopName:'', row:'', shopNum:'', phone:'' };
+    db.users[user.id] = user; account = accounts[key] = { userId:user.id };
+  }
+  if (!user.guest) need(403, 'Недоступный аккаунт');
+  if (!account.token || !db.sessions[account.token] || db.sessions[account.token].userId !== user.id) {
+    account.token = rid(32); db.sessions[account.token] = { userId:user.id, createdAt:now() };
+  }
+  touch(); flush();
+  return { status:'ok', token:account.token, user:meUser(user) };
+});
 
 // --- Вход через Telegram ---
 route('POST', '/auth/start', 0, () => {
@@ -458,8 +518,11 @@ route('POST', '/auth/logout', 1, (q, b, u, req) => { delete db.sessions[req.toke
 route('GET', '/me', 1, (q, b, u) => meUser(u));
 route('PUT', '/me', 1, async (q, b, u) => { for (const [key,kind] of [['name','person'],['shopName','shop']]) { if (b[key] !== undefined && (key === 'name' || b[key])) { const error = Validation.error(kind,b[key]); if (error) need(400,error); } } if (b.ig) { const g = igNorm(b.ig); if (g && g !== u.ig) { if (!IGC[g] || IGC[g].ex == null) await igLoad(g); if (IGC[g] && IGC[g].ex === false) need(400, 'Instagram-аккаунт @' + g + ' не найден'); } }
   const profilePhone = b.phone !== undefined ? tjPhone(b.phone) : u.phone;
+  const profileBazaar=b.bazaar!==undefined?bazOf(b.bazaar):u.bazaar, sector=b.sector!==undefined?Validation.clean(b.sector).toUpperCase():u.sector||'';
+  if (b.sector!==undefined && (sector || ['Саховат','Сомон'].includes(profileBazaar)) && Validation.sectorError(sector)) need(400,Validation.sectorError(sector));
   ['name','shopName'].forEach(k => { if (b[k] !== undefined) u[k] = str(b[k], 60); });
   if (b.bazaar !== undefined) u.bazaar = bazOf(b.bazaar);
+  u.sector=['Саховат','Сомон'].includes(profileBazaar)?sector:'';
   if (b.row !== undefined) u.row = onlyDigits(b.row).slice(0, 4); if (b.shopNum !== undefined) { const sn = onlyDigits(b.shopNum).replace(/^0+/, '').slice(0, 4); checkShop(sn, u.id, u.shopNum); u.shopNum = sn; } if (b.phone !== undefined) u.phone = profilePhone; if (b.about !== undefined) u.about = str(b.about, 200); if (b.ig !== undefined) { u.ig = igNorm(b.ig); if (u.ig) igLoad(u.ig); } if (b.avatar !== undefined) { if (!b.avatar) { delete u.avatar; } else { if (!/^data:image\/(jpeg|png|webp);base64,/.test(b.avatar) || b.avatar.length > 400e3) need(400, 'Фото слишком большое'); u.avatar = b.avatar; u.avTs = now(); } } touch(); return meUser(u); });
 route('GET', '/ig/:name', 0, async (q, b, u, r, p) => { const un = igNorm(p.name); if (!un) need(400, 'Пустой ник'); if (!IGC[un] || !IGC[un].d) await igLoad(un); return { ig: un, exists: IGC[un] ? (IGC[un].ex === undefined ? null : IGC[un].ex) : null, igInfo: igPub(un) }; });
 route('GET', '/users/:id', 0, (q, b, u, r, p) => pubUser(db.users[p.id]) || need(404, 'Нет пользователя'));
@@ -540,8 +603,8 @@ route('GET', '/listings', 0, (q, b, u) => {
       arr = rec.map(l => [l, relevance(l, qs, qquery) * 2 - pos.get(l.id) / Math.max(10, rec.length) * 3]).sort((a, b) => b[1] - a[1]).map(x => x[0]); var ranked = 1; } }
   const s = q.sort || 'rec';
   if (s === 'new') arr.sort((a,b) => b.createdAt - a.createdAt);
-  else if (s === 'cheap') arr.sort((a,b) => (priceNum(a.price) ?? 1e15) - (priceNum(b.price) ?? 1e15));
-  else if (s === 'exp') arr.sort((a,b) => (priceNum(b.price) ?? -1) - (priceNum(a.price) ?? -1));
+  else if (s === 'cheap') arr.sort((a,b) => (effectivePrice(a) ?? 1e15) - (effectivePrice(b) ?? 1e15));
+  else if (s === 'exp') arr.sort((a,b) => (effectivePrice(b) ?? -1) - (effectivePrice(a) ?? -1));
   else if (q.seller) arr.sort((a,b) => b.createdAt - a.createdAt);
   else if (!ranked) arr = recommend(arr, u);
   if (q.sizes) arr.sort((a,b) => Sizes.rank(b, q.sizes) - Sizes.rank(a, q.sizes));
@@ -568,8 +631,12 @@ route('GET', '/listings/:id/similar', 0, (q, b, u, r, p) => {
   const baseWords = new Set(words(l.name));
   const candidates = Object.values(db.listings).filter(x => !x.archived && x.id !== l.id && !hidden.has(x.id) && (!u || x.sellerId !== u.id));
   const recOrder = new Map(recommend(candidates, u).map((x, i) => [x.id, i]));
+  const productKeys = new Set(['двойка','тройка','халат','костюм','платье','юбка','рубашка','футболка','худи','свитер','кардиган','кофта','брюки','джинсы','шорты','куртка','шуба','пальто']);
+  const baseProducts=TAGS.layer2(l.name).tags.filter(t=>productKeys.has(t));
   const ranked = candidates.map(x => {
     if (Sizes.context(l).kids !== Sizes.context(x).kids) return null;
+    const baseCategory = Catalog.normalize(l), candidateCategory = Catalog.normalize(x);
+    if(baseCategory.sub!=='other'&&candidateCategory.sub!=='other'&&baseCategory.sub!==candidateCategory.sub)return null;
     let score = 0, semantic = 0;
     for (const tag of (x.tags || makeTags(x))) if (baseTags.has(tag)) {
       if (tag.startsWith('k:') && !['Одежда','Другое','взрослое','детское','женское','мужское','унисекс'].includes(tag.slice(2))) { score += 2; semantic++; }
@@ -577,14 +644,15 @@ route('GET', '/listings/:id/similar', 0, (q, b, u, r, p) => {
       if (tag.startsWith('a:')) score += 0.35;
       if (tag.startsWith('z:')) score += 0.5;
     }
-    const sameGroup = !!l.sub && l.sub !== 'other' && x.sub === l.sub;
-    if (!sameGroup && !semantic) return null; // never match on seller/price/gender alone
+    const sameGroup = baseCategory.sub !== 'other' && candidateCategory.sub === baseCategory.sub;
+    const sameProduct = baseProducts.some(t=>TAGS.layer2(x.name).tags.includes(t));
+    if (!sameGroup && !sameProduct) return null; // never match on seller/price/gender alone
     if (sameGroup) score += 6;
     if (l.section && x.section === l.section) score += 10;
     const a = l.a || {}, b = x.a || {};
     if (a.gender && b.gender && a.gender !== b.gender && a.gender !== 'Унисекс' && b.gender !== 'Унисекс') return null;
     if (l.sizes && x.sizes && Sizes.rank(x,l.sizes) === 2) score += 1;
-    const priceA = parseFloat(l.price), priceB = parseFloat(x.price);
+    const priceA = effectivePrice(l), priceB = effectivePrice(x);
     if (priceA > 0 && priceB > 0) score += Math.max(0, 1 - Math.abs(Math.log(priceA / priceB))); 
     // Personalization breaks close matches; it must not displace genuinely similar items.
     score += 0.75 * (1 - recOrder.get(x.id) / Math.max(1, candidates.length));
@@ -606,10 +674,10 @@ function checkShop(num, uid, cur) {
   if (shopOwner(num, uid)) need(409, `Контейнер №${num} уже занят другим продавцом`);
 }
 function fillAddr(b, u) { // адрес продавца, указанный один раз, подставляется автоматически
-  for (const k of ['bazaar', 'row', 'shopNum', 'shopName']) if (!String(b[k] == null ? '' : b[k]).trim() && u[k]) b[k] = u[k];
+  for (const k of ['bazaar', 'sector', 'row', 'shopNum', 'shopName']) if (!String(b[k] == null ? '' : b[k]).trim() && u[k]) b[k] = u[k];
   if (!String(b.phone || '').trim() && u.phone) b.phone = u.phone;
 }
-function saveAddr(u, l) { u.shopName = l.shopName; u.bazaar = l.bazaar || ''; u.row = l.row; u.shopNum = l.shopNum; if (l.phone && !u.phone) u.phone = l.phone; }
+function saveAddr(u, l) { u.shopName = l.shopName; u.bazaar = l.bazaar || ''; u.sector = l.sector || ''; u.row = l.row; u.shopNum = l.shopNum; if (l.phone && !u.phone) u.phone = l.phone; }
 route('POST', '/listings', 1, (q, b, u) => {
   fillAddr(b, u);
   const l = cleanListing(b, { id: rid(5), sellerId: u.id, createdAt: now(), views:0, contact:'chat', photos:[] });
@@ -622,7 +690,7 @@ route('POST', '/listings', 1, (q, b, u) => {
   saveAddr(u, l);
   touch();
   // уведомления по сохранённым поискам
-  for (const s of Object.values(db.searches)) if (s.userId !== u.id && matches(l, s)) notify(s.userId, `🔔 Новое по вашему поиску «${s.title}»:\n${l.name} — ${l.price || 'цена не указана'}\nРяд ${l.row}, магазин №${l.shopNum}`);
+  for (const s of Object.values(db.searches)) if (s.userId !== u.id && matches(l, s)) notify(s.userId, `Новое по вашему поиску «${s.title}»:\n${l.name} — ${Pricing.text(l)}\nРяд ${l.row}, магазин №${l.shopNum}`);
   return listingOut(l, true);
 });
 function own(p, u) { const l = db.listings[p.id] || need(404, 'Объявление не найдено'); if (l.sellerId !== u.id) need(403, 'Это не ваше объявление'); return l; }
@@ -638,7 +706,7 @@ route('GET', '/my/stats', 1, (q, b, u) => {
   const days = []; for (let i = 13; i >= 0; i--) days.push(new Date(Date.now() - i*864e5).toISOString().slice(0,10));
   const items = Object.values(db.listings).filter(l => l.sellerId === u.id).map(l => {
     const st = l.st || {}, chats = Object.values(db.threads).filter(t => t.listingId === l.id).length;
-    return { id:l.id, name:l.name, price:l.price, photo:l.photos[0]||null, archived:!!l.archived, createdAt:l.createdAt,
+    return { id:l.id, name:l.name, price:Pricing.text(l), priceNum:Pricing.original(l), discountPrice:Pricing.sale(l), photo:l.photos[0]||null, archived:!!l.archived, createdAt:l.createdAt,
       views:l.views||0, favCount:l.favCount||0, chats, daily: days.map(d => ({ d, v:(st[d]||{}).v||0, f:(st[d]||{}).f||0, c:(st[d]||{}).c||0 })) };
   }).sort((a,b) => b.views - a.views);
   const sum = k => items.reduce((s,x) => s + x[k], 0);
@@ -663,8 +731,8 @@ route('POST', '/listings/:id/thread', 1, (q, b, u, r, p) => {   // открыт�
 });
 function myThread(p, u) { const t = db.threads[p.id] || need(404, 'Диалог не найден'); if (t.buyerId !== u.id && t.sellerId !== u.id) need(403, 'Нет доступа'); return t; }
 // сообщение для клиента: фото/голосовые, ответ, правка, удаление, закреп, прочтение
-const msgOut = (m, uid) => ({ id:m.id, text:m.del ? '' : m.text, t:m.t, u:m.u || m.t, lid:m.lid, mine: m.from === uid, img: m.del ? undefined : m.img, voice: m.del ? undefined : m.voice, dur: m.dur, re: m.re && { id:m.re.id, text:m.re.text, mine: m.re.mine === uid }, ed: m.ed ? 1 : undefined, del: m.del ? 1 : undefined });
-const shortMsg = m => m && Object.assign({}, m, { re: undefined, img: m.img ? 1 : undefined, voice: m.voice ? 1 : undefined, text: m.del ? 'Сообщение удалено' : (m.text || (m.img ? '📷 Фото' : m.voice ? '🎤 Голосовое' : '')) });
+const msgOut = (m, uid) => ({ id:m.id, clientId:m.clientId, text:m.del ? '' : m.text, t:m.t, u:m.u || m.t, lid:m.lid, mine: m.from === uid, img: m.del ? undefined : m.img, voice: m.del ? undefined : m.voice, dur: m.dur, re: m.re && { id:m.re.id, text:m.re.text, mine: m.re.mine === uid }, ed: m.ed ? 1 : undefined, del: m.del ? 1 : undefined });
+const shortMsg = m => m && Object.assign({}, m, { re: undefined, img: m.img ? 1 : undefined, voice: m.voice ? 1 : undefined, text: m.del ? '' : m.text, preview: m.del ? 'Сообщение удалено' : (m.text || (m.img ? 'Фото' : m.voice ? 'Голосовое сообщение' : m.lid ? 'Объявление' : '')) });
 route('GET', '/threads/:id', 1, (q, b, u, r, p) => {
   const t = myThread(p, u), me = u.id === t.buyerId; if (me) { t.uB = 0; t.rB = now(); } else { t.uS = 0; t.rS = now(); } touch();
   const since = +q.since || 0;
@@ -676,19 +744,33 @@ route('GET', '/threads/:id/messages/:mid/photo', 1, (q, b, u, r, p) => {
   if (m.del || !m.img) need(404, 'Фото недоступно');
   return { img: m.img };
 });
+route('GET', '/threads/:id/messages/:mid/voice', 1, (q, b, u, r, p) => {
+  const t = myThread(p, u), m = myMsg(t, p.mid, u);
+  if (m.del || !m.voice) need(404, 'Голосовое недоступно');
+  return { voice:m.voice, dur:m.dur };
+});
 const MEDIA = (v, re, max) => typeof v === 'string' && re.test(v) && v.length <= max ? v : '';
 route('POST', '/threads/:id/messages', 1, (q, b, u, r, p) => {
   const t = myThread(p, u), text = str(b.text, 2000), img = MEDIA(b.img, /^data:image\/(jpeg|png|webp);base64,/, 900e3), voice = MEDIA(b.voice, /^data:audio\/[\w.+-]+(;codecs=[\w]+)?;base64,/, 1.5e6);
   if (b.img && !img) need(400, 'Фото повреждено или больше 900 КБ');
   if (b.voice && !voice) need(400, 'Голосовое повреждено или слишком большое');
   if (!text && !img && !voice) need(400, 'Пустое сообщение');
-  const m = { id: rid(4), from: u.id, text, t: now() }; if (b.listingId && db.listings[b.listingId]) m.lid = String(b.listingId);
+  const clientId = typeof b.clientId === 'string' && /^[A-Za-z0-9_-]{8,80}$/.test(b.clientId) ? b.clientId : '';
+  if (b.clientId && !clientId) need(400, 'Некорректный идентификатор сообщения');
+  if (clientId) {
+    const previous = t.messages.find(x => x.from === u.id && x.clientId === clientId);
+    if (previous) {
+      if (!previous.del && (previous.text !== text || !cloud.equivalent(previous.img || '',img) || !cloud.equivalent(previous.voice || '',voice))) need(409, 'Идентификатор уже использован');
+      return msgOut(previous, u.id);
+    }
+  }
+  const m = { id: rid(4), clientId:clientId || undefined, from: u.id, text, t: now() }; if (b.listingId && db.listings[b.listingId]) m.lid = String(b.listingId);
   if (img) m.img = img; if (voice) { m.voice = voice; m.dur = Math.min(600, Math.max(0, +b.dur || 0)); }
-  if (b.re) { const o = t.messages.find(x => x.id === b.re); if (o) m.re = { id:o.id, text: o.del ? 'Сообщение удалено' : str(o.text || (o.img ? '📷 Фото' : o.voice ? '🎤 Голосовое' : ''), 120), mine: o.from }; }
+  if (b.re) { const o = t.messages.find(x => x.id === b.re); if (o) m.re = { id:o.id, text: o.del ? 'Сообщение удалено' : str(o.text || (o.img ? 'Фото' : o.voice ? 'Голосовое сообщение' : ''), 120), mine: o.from }; }
   t.messages.push(m); if (t.messages.length > 3000) t.messages.splice(0, t.messages.length - 3000);
   const toBuyer = u.id === t.sellerId; if (toBuyer) t.uB++; else t.uS++; touch();
   const l = db.listings[t.listingId] || {};
-  notify(toBuyer ? t.buyerId : t.sellerId, `💬 ${u.name || 'Пользователь'}${l.name ? ' · «' + l.name + '»' : ''}\n${text || (img ? '📷 Фото' : '🎤 Голосовое сообщение')}`);
+  notify(toBuyer ? t.buyerId : t.sellerId, `${u.name || 'Пользователь'}${l.name ? ' · «' + l.name + '»' : ''}\n${text || (img ? 'Фото' : '🎤 Голосовое сообщение')}`);
   return msgOut(m, u.id);
 });
 function myMsg(t, id, u, own) { const m = t.messages.find(x => x.id === id) || need(404, 'Сообщение не найдено'); if (own && m.from !== u.id) need(403, 'Можно менять только свои сообщения'); return m; }
@@ -701,7 +783,7 @@ route('DELETE', '/threads/:id/messages/:mid', 1, (q, b, u, r, p) => {  // уда
   if (t.pin && t.pin.id === m.id) t.pin = null; touch(); return msgOut(m, u.id);
 });
 route('POST', '/threads/:id/pin', 1, (q, b, u, r, p) => {            // закрепить / открепить (b.id = null)
-  const t = myThread(p, u); if (!b.id) t.pin = null; else { const m = myMsg(t, b.id, u); t.pin = { id:m.id, text: m.text || (m.img ? '📷 Фото' : m.voice ? '🎤 Голосовое' : ''), t: now() }; }
+  const t = myThread(p, u); if (!b.id) t.pin = null; else { const m = myMsg(t, b.id, u); t.pin = { id:m.id, text: m.text || (m.img ? 'Фото' : m.voice ? 'Голосовое сообщение' : ''), t: now() }; }
   const last = t.messages[t.messages.length - 1]; if (last) last.u = now(); touch(); return { pin: t.pin };
 });
 
@@ -710,10 +792,11 @@ route('GET', '/updates', 1, (q, b, u) => {
   const since = +q.since || 0, items = [];
   for (const t of Object.values(db.threads)) {
     if (t.buyerId !== u.id && t.sellerId !== u.id) continue;
-    const ms = t.messages.filter(m => m.t > since && m.from !== u.id);
+    const read = (u.id === t.buyerId ? t.rB : t.rS) || 0;
+    const ms = t.messages.filter(m => m.t > Math.max(since,read) && m.from !== u.id && !m.del);
     if (!ms.length) continue;
     const o = db.users[ms[ms.length-1].from] || {}, l = db.listings[t.listingId] || {};
-    items.push({ tid: t.id, name: o.shopName || o.name || 'Пользователь', item: l.name || '', messages: ms.slice(-5).map(m => m.del ? 'Сообщение удалено' : m.text || (m.img ? '📷 Фото' : m.voice ? '🎤 Голосовое' : m.lid ? 'Объявление' : 'Сообщение')) });
+    items.push({ tid: t.id, name: o.shopName || o.name || 'Пользователь', item: l.name || '', messages: ms.slice(-5).map(m => m.del ? 'Сообщение удалено' : m.text || (m.img ? 'Фото' : m.voice ? 'Голосовое сообщение' : m.lid ? 'Объявление' : 'Сообщение')) });
   }
   return { now: now(), items };
 });
@@ -756,7 +839,7 @@ route('POST', '/users/:id/reviews', 1, (q, b, u, r, p) => {
   if (!stars) need(400, 'Поставьте оценку 1–5');
   db.reviews = db.reviews.filter(x => !(x.sellerId === p.id && x.authorId === u.id));
   db.reviews.push({ id: rid(4), sellerId: p.id, authorId: u.id, stars, text, t: now(), listingName: (db.listings[t.listingId]||{}).name || '' }); touch();
-  notify(p.id, `⭐ Новый отзыв (${stars}/5): ${text}`);
+  notify(p.id, `Новый отзыв (${stars}/5): ${text}`);
   return rating(p.id);
 });
 
@@ -776,7 +859,7 @@ route('DELETE', '/searches/:id', 1, (q, b, u, r, p) => { const s = db.searches[p
 route('GET', '/listings/:id/share', 0, (q, b, u, r, p) => {
   const l = db.listings[p.id] || need(404, 'Объявление не найдено');
   const url = shareUrl(l.id);
-  return { url, text: `${l.name} — ${l.price || 'цена не указана'}\n${l.bazaar ? 'Базар ' + l.bazaar + ', ' : ''}Ряд ${l.row}, магазин №${l.shopNum} (${l.shopName})` + (url ? `\n${url}` : '') };
+  return { url, text: `${l.name} — ${Pricing.text(l)}\n${l.bazaar ? 'Базар ' + l.bazaar + ', ' : ''}${l.sector ? 'сектор ' + l.sector + ', ' : ''}Ряд ${l.row}, магазин №${l.shopNum} (${l.shopName})` + (url ? `\n${url}` : '') };
 });
 
 // --- Рекомендации ---
@@ -808,7 +891,8 @@ function send(res, code, obj) {
 }
 process.on('uncaughtException', e => console.error('uncaught:', e));
 process.on('unhandledRejection', e => console.error('unhandled:', e));
-http.createServer((req, res) => {
+http.createServer(async (req, res) => {
+  if(stopping)return send(res,503,{error:'Сервер перезапускается'});
   if (req.method === 'OPTIONS') return send(res, 204, {});
   const url = new URL(req.url, 'http://x'), q = Object.fromEntries(url.searchParams);
   if (url.pathname === '/webhooks/whatsapp') return waAuth.webhook(req, res, url);
@@ -816,35 +900,35 @@ http.createServer((req, res) => {
   if (lm) {
     const l = db.listings[lm[1]], esc = v => String(v || '').replace(/[&<>"]/g, c => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;' })[c]);
     const appLink = 'glassmarket://listing/' + encodeURIComponent(lm[1]);
-    const download = 'https://github.com/somontj5/server.js/raw/main/apk/GlassMarket9.16.apk';
+    const download = 'https://github.com/somontj5/server.js/raw/main/apk/SUGD.TJ-9.22.apk';
     const intent = 'intent://listing/' + encodeURIComponent(lm[1]) + '#Intent;scheme=glassmarket;package=ru.glassmarket.app;S.browser_fallback_url=' + encodeURIComponent(download) + ';end';
-    const html = l && !l.archived ? `<!doctype html><meta charset=utf-8><meta name=viewport content="width=device-width,initial-scale=1"><title>${esc(l.name)}</title><meta property="og:title" content="${esc(l.name + ' — ' + (l.price||''))}"><meta property="og:description" content="${esc('Ряд ' + l.row + ', магазин №' + l.shopNum)}">
-<body style="font-family:sans-serif;max-width:520px;margin:auto;padding:12px">${l.photos[0] ? `<img src="/l/${esc(l.id)}/photo" style="width:100%;border-radius:12px">` : ''}<h2>${esc(l.name)}</h2><h3>${esc(l.price || 'цена не указана')}</h3><p>📍 ${l.bazaar ? 'Базар ' + esc(l.bazaar) + ', ' : ''}Ряд ${esc(l.row)}, магазин №${esc(l.shopNum)} (${esc(l.shopName)})</p>${l.material ? `<p>🧵 Материал: ${esc(l.material)}</p>` : ''}<p style="white-space:pre-wrap">${esc(l.desc)}</p><a id="openApp" href="${esc(intent)}" style="display:block;text-align:center;background:#00aaff;color:#fff;padding:14px;border-radius:12px;text-decoration:none">Открыть в СтеклоМаркет</a><p style="text-align:center"><a href="${download}">Скачать приложение 9.16</a></p><p style="color:#777;font-size:13px">Если приложение не открылось автоматически, нажмите кнопку выше.</p><script>if(/Android/i.test(navigator.userAgent))location.href=${JSON.stringify(appLink)};</script></body>`
+    const html = l && !l.archived ? `<!doctype html><meta charset=utf-8><meta name=viewport content="width=device-width,initial-scale=1"><title>${esc(l.name)}</title><meta property="og:title" content="${esc(l.name + ' — ' + Pricing.text(l))}"><meta property="og:description" content="${esc('Ряд ' + l.row + ', магазин №' + l.shopNum)}">
+<body style="font-family:sans-serif;max-width:520px;margin:auto;padding:12px">${l.photos[0] ? `<img src="/l/${esc(l.id)}/photo" style="width:100%;border-radius:12px">` : ''}<h2>${esc(l.name)}</h2><h3>${esc(Pricing.text(l))}</h3><p>${l.bazaar ? 'Базар ' + esc(l.bazaar) + ', ' : ''}${l.sector ? 'сектор ' + esc(l.sector) + ', ' : ''}Ряд ${esc(l.row)}, магазин №${esc(l.shopNum)} (${esc(l.shopName)})</p>${l.material ? `<p>Материал: ${esc(l.material)}</p>` : ''}<p style="white-space:pre-wrap">${esc(l.desc)}</p><a id="openApp" href="${esc(intent)}" style="display:block;text-align:center;background:#075b46;color:#fff;padding:14px;border-radius:12px;text-decoration:none">Открыть в SUGD.TJ</a><p style="text-align:center"><a href="${download}">Скачать SUGD.TJ 9.22</a></p><p style="color:#777;font-size:13px">Если приложение не открылось автоматически, нажмите кнопку выше.</p><script>if(/Android/i.test(navigator.userAgent))location.href=${JSON.stringify(appLink)};</script></body>`
       : '<!doctype html><meta charset=utf-8><h3 style="font-family:sans-serif">Объявление снято с публикации</h3>';
     res.writeHead(l && !l.archived ? 200 : 404, { 'content-type': 'text/html; charset=utf-8', 'cache-control':'no-store', 'x-content-type-options':'nosniff' }); return res.end(html);
   }
-  const pm = req.method === 'GET' && url.pathname.match(/^\/l\/([\w-]+)\/photo$/);
-  if (pm) { const l = db.listings[pm[1]], ph = l && !l.archived && l.photos[0], m = ph && ph.match(/^data:(image\/\w+);base64,(.+)$/);
+  const pm = req.method === 'GET' && url.pathname.match(/^\/l\/([\w-]+)\/(?:photo|photos\/(\d+))$/);
+  if (pm) { const l = db.listings[pm[1]], raw = l && !l.archived && l.photos[Number(pm[2]||0)], ph = cloud.cfg ? await cloud.data(raw).catch(()=>null) : raw, m = ph && ph.match(/^data:(image\/\w+);base64,(.+)$/);
     if (m) { res.writeHead(200, { 'content-type': m[1], 'cache-control': 'max-age=86400' }); return res.end(Buffer.from(m[2], 'base64')); }
     if (ph) { res.writeHead(302, { location: ph }); return res.end(); } res.writeHead(404); return res.end(); }
   const im = req.method === 'GET' && url.pathname.match(/^\/ig\/([a-z0-9._]{1,30})\/pic$/);
   if (im) { const d = IGC[im[1]] && IGC[im[1]].d; if (d && d.picBuf) { res.writeHead(200, { 'content-type': d.picType, 'cache-control': 'max-age=43200', 'access-control-allow-origin': '*' }); return res.end(d.picBuf); } res.writeHead(404); return res.end(); }
   const am = req.method === 'GET' && url.pathname.match(/^\/u\/([\w-]+)\/avatar$/);
-  if (am) { const au = db.users[am[1]], m = au && au.avatar && au.avatar.match(/^data:(image\/\w+);base64,(.+)$/);
+  if (am) { const au = db.users[am[1]], avatar = au && au.avatar, image = cloud.cfg ? await cloud.data(avatar).catch(()=>null) : avatar, m = image && image.match(/^data:(image\/\w+);base64,(.+)$/);
     if (m) { res.writeHead(200, { 'content-type': m[1], 'cache-control': 'max-age=86400', 'access-control-allow-origin': '*' }); return res.end(Buffer.from(m[2], 'base64')); } res.writeHead(404); return res.end(); }
   const rt = routes.find(r => r.m === req.method && r.re.test(url.pathname));
   if (!rt) return send(res, 404, { error:'Не найдено' });
   let size = 0, chunks = [];
   req.on('data', c => { size += c.length; if (size > 20e6) { send(res, 413, { error:'Слишком большой запрос (фото)' }); req.destroy(); } else chunks.push(c); });
-  req.on('end', () => {
+  req.on('end', async () => {
     try {
       let b = {}; if (chunks.length) { try { b = JSON.parse(Buffer.concat(chunks).toString()); } catch { need(400, 'Неверный JSON'); } }
       const tok = (req.headers.authorization || '').replace(/^Bearer\s+/i, ''); req.token = tok;
       const s = db.sessions[tok], u = s && db.users[s.userId];
       if (rt.auth && !u) need(401, 'Требуется вход');
-      const out = rt.h(q, b, u, req, url.pathname.match(rt.re).groups || {});
-      if (out && typeof out.then === 'function') return out.then(v => send(res, 200, v), e => { if (!(e instanceof E)) console.error(e); send(res, e.code || 500, { error: e.message || 'Ошибка сервера' }); });
-      send(res, 200, out);
+      const out = await rt.h(q, b, u, req, url.pathname.match(rt.re).groups || {});
+      flush();
+      try {await durable();send(res,200,cloud.cfg?await cloud.expand(out):out)}catch{send(res,503,{error:'Не удалось подтвердить сохранение. Повторите запрос; данные не удалены.'})}
     } catch (e) { if (!(e instanceof E)) console.error(e); send(res, e.code || 500, { error: e.message || 'Ошибка сервера' }); }
   });
 }).listen(PORT, '0.0.0.0', () => console.log(`Сервер: http://0.0.0.0:${PORT}` + (PUB ? `  публичный: ${PUB}` : '')));
@@ -852,3 +936,4 @@ http.createServer((req, res) => {
 // чистка просроченных кодов входа
 setInterval(() => { waAuth.clean(); for (const c in db.codes) if (now() - db.codes[c].createdAt > 600e3) { delete db.codes[c]; touch(); } }, 60e3);
 botLoop();
+})().catch(()=>{console.error('Server initialization failed. Check database schema, configuration and writer lease. Existing data was not replaced.');process.exit(78)});
