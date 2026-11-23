@@ -49,7 +49,10 @@ class SupabaseStore{
    if(!local||(!Object.keys(local.users||{}).length&&!Object.keys(local.listings||{}).length))throw Error('Legacy database is missing or empty; refusing automatic initialization');
    // Take a local immutable backup before the first cloud write.
    if(this.env.DB_FILE&&fs.existsSync(this.env.DB_FILE))fs.copyFileSync(this.env.DB_FILE,this.env.DB_FILE+'.pre-supabase-'+Date.now());
-   await this.save(local);this.db=local;
+   await this.save(local);
+   const verified=await this.rpc('gm_snapshot',{p_claim:false});
+   if(!verified.initialized||Number(verified.revision)!==this.revision||!require('node:util').isDeepStrictEqual(verified.tables,this.tables))throw Error('Cloud import read-back verification failed; local backup retained');
+   console.log('Supabase import committed and read-back verified');this.db=local;
   }else this.db=decode(this.tables);
   for(const [id,m] of Object.entries(this.tables.gm_media))this.media.set(id,m);
   return this.db;

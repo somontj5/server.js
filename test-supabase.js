@@ -1,7 +1,7 @@
 const test=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs'),os=require('node:os'),path=require('node:path');
 const {PGlite}=require('@electric-sql/pglite');
 const {SupabaseStore,encode,decode,TABLES,config}=require('./supabase-store');
-const {backup,unpack}=require('./supabase-maintenance');
+const {backup,unpack,preflight}=require('./supabase-maintenance');
 const env={SUPABASE_URL:'https://test.supabase.co',SUPABASE_SERVICE_KEY:'test-service-key',GM_SUPABASE_IMPORT:'true'};
 function source(){return {users:{u:{id:'u',tgId:123,favs:['l'],interests:{'z:number:48':[2,123]},guest:false}},listings:{l:{id:'l',sellerId:'u',sub:'dress',section:'dress-dresses',a:{ageGroup:'Взрослое',gender:'Женское'},sizes:{entries:[{system:'number',values:['48']}],standard:false},photos:[],price:'300',tags:['dress']}},sessions:{token:{userId:'u'}},codes:{c:{createdAt:100}},guestAccounts:{hashed:{userId:'u'}},threads:{t:{id:'t',buyerId:'u',sellerId:'s',messages:[{id:'m',from:'u',t:123,text:'Привет',re:{id:'other',text:'Фото'}}]}},reviews:[{id:'r',stars:5}],searches:{x:{userId:'u',q:'платье'}},whatsappAuth:{sessions:{login:{createdAt:100,expiresAt:300100,status:'pending',proofHash:'hash',codeHash:'hash2'}},limits:{}},unknown:{word:{c:1}},qlog:{dress:2},aiStatus:{state:'ok'}}}
 async function database(){const pg=new PGlite();await pg.exec('create role anon;create role authenticated;create role service_role bypassrls;create schema storage;create table storage.buckets(id text primary key,name text,public boolean,file_size_limit bigint,allowed_mime_types text[]);');await pg.exec(fs.readFileSync('supabase-schema.sql','utf8'));const files=new Map();let lose=false;
@@ -41,3 +41,34 @@ test('Real Postgres: RLS, lease exclusion, atomic revision commits, restart, med
  }finally{clearInterval(store.timer);clearInterval(other.timer);delete process.env.SUPABASE_SERVICE_KEY;await d.pg.close();fs.rmSync(dir,{recursive:true,force:true})}
 });
 test('Empty legacy file cannot silently initialize Supabase',async()=>{const d=await database(),s=new SupabaseStore(env,d.fetcher);try{await assert.rejects(s.open({users:{},listings:{}}));assert.equal((await s.rpc('gm_snapshot',{p_claim:false})).initialized,false)}finally{clearInterval(s.timer);await d.pg.close()}});
+
+test('Activation preflight is read-only and rejects public/missing buckets and missing legacy data',async()=>{
+ const dir=fs.mkdtempSync(path.join(os.tmpdir(),'gm-preflight-')),file=path.join(dir,'db.json'),d=await database();
+ let bucket={id:'gm-media',public:false,file_size_limit:2097152},claims=0;
+ const fetcher=async(url,opts)=>{
+  if(url.endsWith('/storage/v1/bucket/gm-media'))return new Response(JSON.stringify(bucket));
+  if(url.endsWith('/rpc/gm_snapshot')&&JSON.parse(opts.body||'{}').p_claim)claims++;
+  return d.fetcher(url,opts);
+ };
+ const store=new SupabaseStore(env,fetcher);
+ try{
+  await assert.rejects(preflight(store),/legacy database is missing/);
+  fs.writeFileSync(file,JSON.stringify(source()));
+  const result=await preflight(store,file);assert.equal(result.initialized,false);assert.equal(claims,0);
+  bucket.public=true;await assert.rejects(preflight(store,file),/private/);bucket.public=false;
+  bucket.file_size_limit=0;await assert.rejects(preflight(store,file),/2 MB/);bucket.file_size_limit=2097152;
+  await store.open(source());const ready=await preflight(store);assert.equal(ready.initialized,true);assert.equal(ready.counts.gm_users,1);
+  await store.close();
+  const role=await d.pg.query('select writer from gm_control');assert.equal(role.rows[0].writer,null);
+ }finally{clearInterval(store.timer);await d.pg.close();fs.rmSync(dir,{recursive:true,force:true})}
+});
+test('First cloud import checks read-back and fails closed on mismatched data',async()=>{
+ const d=await database();let corrupt=false;
+ const fetcher=async(url,opts)=>{const r=await d.fetcher(url,opts);
+  if(url.endsWith('/rpc/gm_commit')&&r.ok)corrupt=true;
+  if(corrupt&&url.endsWith('/rpc/gm_snapshot')){const v=await r.json();delete v.tables.gm_users.u;return new Response(JSON.stringify(v))}return r;
+ };
+ const store=new SupabaseStore(env,fetcher);
+ try{await assert.rejects(store.open(source()),/read-back verification failed/);assert.equal((await d.pg.query('select count(*) as n from gm_users')).rows[0].n,1)}
+ finally{clearInterval(store.timer);await d.pg.close()}
+});

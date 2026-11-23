@@ -23,6 +23,8 @@ jobs:
       - name: Check configuration
         run: |
           test -n "$SUPABASE_URL" && test -n "$SUPABASE_SERVICE_KEY" || { echo '::error::Configure SUPABASE_URL and SUPABASE_SERVICE_KEY'; exit 1; }
+      - name: Verify schema and private Storage bucket
+        run: node supabase-maintenance.js preflight
       - name: Lightweight daily database query
         run: node supabase-maintenance.js ping
       - name: Encrypted consistent backup including private media
