@@ -2,8 +2,8 @@
 // Private backup files are encrypted before uploading to GitHub artifacts.
 const fs=require('node:fs'),path=require('node:path'),os=require('node:os'),crypto=require('node:crypto'),zlib=require('node:zlib'),readline=require('node:readline');
 const {Readable}=require('node:stream'),{pipeline}=require('node:stream/promises');
-const {SupabaseStore,TABLES,decode,encode}=require('./supabase-store');
-const key=()=>crypto.createHash('sha256').update('gm-backup-v1\0'+(process.env.GM_BACKUP_KEY||process.env.SUPABASE_SERVICE_KEY||'')).digest();
+const {SupabaseStore,TABLES,decode,encode,secretValue}=require('./supabase-store');
+const key=()=>crypto.createHash('sha256').update('gm-backup-v1\0'+(process.env.GM_BACKUP_KEY||secretValue(process.env.SUPABASE_SERVICE_KEY,'SUPABASE_SERVICE_KEY'))).digest();
 async function backup(store,file){
  const snapshot=await store.rpc('gm_snapshot',{p_claim:false});if(!snapshot.initialized)throw Error('Database not initialized; backup aborted');
  async function* lines(){yield JSON.stringify({format:'gm-backup-v1',createdAt:new Date().toISOString(),schema:fs.readFileSync(path.join(__dirname,'supabase-schema.sql'),'utf8'),snapshot})+'\n';
