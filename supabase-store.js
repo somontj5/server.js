@@ -32,13 +32,42 @@ function decode(t){
  db.reviews=Object.values(t.gm_reviews).sort((a,b)=>a.position-b.position).map(x=>x.review);return db;
 }
 function diff(before,after){const upserts={},deletes={};for(const t of TABLES){const rows={};for(const [id,v] of Object.entries(after[t]))if(JSON.stringify(before[t][id])!==JSON.stringify(v))rows[id]=v;const del=Object.keys(before[t]).filter(id=>!(id in after[t]));if(Object.keys(rows).length)upserts[t]=rows;if(del.length)deletes[t]=del}return {upserts,deletes}}
-function config(env){const url=env.SUPABASE_URL,key=env.SUPABASE_SERVICE_KEY;if(!url&&!key)return null;if(!url||!key)throw Error('Both SUPABASE_URL and SUPABASE_SERVICE_KEY are required');const u=new URL(url);if(u.protocol!=='https:'||u.username||u.password||u.pathname!=='/')throw Error('SUPABASE_URL must be an HTTPS project origin');return {url:u.origin,key}}
+// GitHub Secrets often contain a copied API URL, surrounding quotes or a newline.
+// Normalize only known Supabase service paths; never print configuration values.
+function secretValue(value,name){
+ if(value==null)return '';if(typeof value!=='string')throw Error(name+' must be text');
+ let v=value.replace(/^[\s\uFEFF\u200B]+|[\s\uFEFF\u200B]+$/g,'');
+ if(v.startsWith(name+'='))v=v.slice(name.length+1).trim();
+ const pairs={'"':'"',"'":"'",'“':'”','«':'»'};
+ for(let i=0;i<2;i++){const end=pairs[v[0]];if(end&&v.endsWith(end))v=v.slice(1,-1).trim();else break}
+ return v;
+}
+function config(env){
+ const url=secretValue(env.SUPABASE_URL,'SUPABASE_URL'),key=secretValue(env.SUPABASE_SERVICE_KEY,'SUPABASE_SERVICE_KEY');
+ if(!url&&!key)return null;if(!url||!key)throw Error('Both SUPABASE_URL and SUPABASE_SERVICE_KEY are required');
+ let u;try{u=new URL(url)}catch{throw Error('SUPABASE_URL is not a valid URL. Copy Project URL from Supabase Settings > Data API.')}
+ if(u.username||u.password)throw Error('SUPABASE_URL must not contain a username or password');
+ if(u.search||u.hash)throw Error('SUPABASE_URL must not contain query parameters or a fragment');
+ // Correct http to https only for Supabase-managed hosts. No key is sent over HTTP.
+ if(u.protocol==='http:'&&/^[a-z0-9-]+\.supabase\.(co|in)$/i.test(u.hostname)&&!u.port)u.protocol='https:';
+ if(u.protocol!=='https:')throw Error('SUPABASE_URL requires HTTPS; plain HTTP would expose the service key');
+ const path=u.pathname.replace(/\/+$/,'');
+ if(path&&!/^\/(?:rest|auth|storage|functions)\/v1(?:\/|$)/.test(path))throw Error('SUPABASE_URL contains an unsupported path. Use Project URL, not a dashboard page or database connection string.');
+ if(/^https?:\/\//i.test(key))throw Error('SUPABASE_SERVICE_KEY must be a secret API key, not a URL');
+ if(/^sb_publishable_/i.test(key))throw Error('SUPABASE_SERVICE_KEY is a publishable key; use the secret or legacy service_role key');
+ if(/\s/.test(key))throw Error('SUPABASE_SERVICE_KEY contains internal whitespace; copy the key as one line');
+ if(key.startsWith('eyJ')){let claims;try{claims=JSON.parse(Buffer.from(key.split('.')[1]||'','base64url').toString())}catch{throw Error('SUPABASE_SERVICE_KEY is a malformed legacy JWT')}
+  if(claims.role&&claims.role!=='service_role')throw Error('SUPABASE_SERVICE_KEY must have service_role, not the anon/authenticated role');}
+ return {url:u.origin,key};
+}
 class SupabaseStore{
  constructor(env=process.env,fetcher=fetch){this.env=env;this.cfg=config(env);this.fetch=fetcher;this.writer=crypto.randomUUID();this.queue=Promise.resolve();this.tables=empty();this.media=new Map();this.cache=new Map();this.revision=0;this.healthy=true;this.pending=null;this.downloads=new Map();this.downloadActive=0;this.downloadWaiters=[]}
  async request(path,body,method='POST',headers={}){
   const h={apikey:this.cfg.key,Authorization:'Bearer '+this.cfg.key,...headers};if(body!==undefined&&!Buffer.isBuffer(body))h['Content-Type']='application/json';
-  let r;try{r=await this.fetch(this.cfg.url+path,{method,headers:h,body:body===undefined?undefined:Buffer.isBuffer(body)?body:JSON.stringify(body),signal:AbortSignal.timeout(25000)})}catch{throw Error('Supabase connection failed')}
-  if(!r.ok){const e=new Error('Supabase operation failed ('+r.status+'). Check schema, permissions and quota.');e.status=r.status;throw e}return r;
+  let r;try{r=await this.fetch(this.cfg.url+path,{method,headers:h,body:body===undefined?undefined:Buffer.isBuffer(body)?body:JSON.stringify(body),signal:AbortSignal.timeout(25000)})}catch(e){const codes={ENOTFOUND:'DNS lookup failed: check Project URL and whether the Supabase project is paused',EAI_AGAIN:'temporary DNS lookup failure',ECONNREFUSED:'connection refused',CERT_HAS_EXPIRED:'TLS certificate expired',UNABLE_TO_VERIFY_LEAF_SIGNATURE:'TLS certificate could not be verified'};throw Error('Supabase connection failed: '+(codes[e.cause&&e.cause.code]||(e.name==='TimeoutError'?'request timed out':'network or TLS error')))}
+  if(!r.ok){let code='';try{const body=await r.json();if(typeof body.code==='string'&&/^[A-Z0-9_]{3,24}$/.test(body.code))code=body.code}catch{}
+   const hint=code==='PGRST202'||code==='42P01'?'Project SQL functions/tables are missing. Run supabase-schema.sql in this project SQL Editor.':r.status===401?'API key was rejected. Check SUPABASE_SERVICE_KEY belongs to the same project as SUPABASE_URL.':r.status===403||code==='42501'?'Service-role permission denied. Do not use anon or publishable keys.':code==='40001'?'Database revision or writer lease conflict. Do not start a second server.':r.status===404?'Resource not found. Check project schema and private gm-media bucket.':r.status>=500?'Supabase is temporarily unavailable; retry later.':'Check schema, permissions and free-plan quota.';
+   const e=new Error('Supabase operation failed (HTTP '+r.status+(code?', '+code:'')+'). '+hint);e.status=r.status;throw e}return r;
  }
  async rpc(name,body){const r=await this.request('/rest/v1/rpc/'+name,body);return r.status===204?null:r.json()}
  async open(local){
@@ -89,4 +118,4 @@ class SupabaseStore{
  equivalent(a,b){if(a===b)return true;const m=typeof a==='string'&&a.match(ref);if(!m||!/^data:[^,]+;base64,/.test(b||''))return false;return crypto.createHash('sha256').update(Buffer.from(b.slice(b.indexOf(',')+1),'base64')).digest('hex')===m[1]}
  async close(){clearInterval(this.timer);await this.queue;await this.rpc('gm_release',{p_writer:this.writer})}
 }
-module.exports={SupabaseStore,encode,decode,diff,config,TABLES};
+module.exports={SupabaseStore,encode,decode,diff,config,secretValue,TABLES};
