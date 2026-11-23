@@ -52,9 +52,10 @@ jobs:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
-          # Set repository variable GM_STORAGE_BACKEND=supabase AFTER running the SQL.
-          # Default stays file so merely adding secrets cannot stop the working app.
-          GM_STORAGE_BACKEND: ${{ vars.GM_STORAGE_BACKEND || 'file' }}
+          # Install this workflow only AFTER successfully running supabase-schema.sql.
+          # This is the owner's explicit activation; missing credentials fail closed.
+          GM_STORAGE_BACKEND: 'supabase'
+          GM_REQUIRE_SUPABASE: 'true'
           GM_SUPABASE_IMPORT: 'true'
           DB_FILE: data/db.json
           VERIFY_TOKEN: ${{ secrets.VERIFY_TOKEN }}
